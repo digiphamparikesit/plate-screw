@@ -271,7 +271,7 @@
 
 <script>
   // ============================================================
-  // KONFIGURASI – Ganti dengan URL Web App Anda
+  // KONFIGURASI – Ganti dengan URL Web App Anda (SETELAH DEPLOY ULANG)
   // ============================================================
   const API_BASE = 'https://script.google.com/macros/s/AKfycbxppo7ctZDoeMTzMAtRxN_1Ic1hZvWR3LobXLqdOHeBMtTi2tPkV-jxBsyrX3JUQ40/exec';
 
@@ -294,24 +294,25 @@
   }
 
   // ============================================================
-  // API CALL – fetch ke Apps Script
+  // API CALL – REVISI (ANTI CORS)
   // ============================================================
   async function apiCall(action, params = {}, method = 'GET') {
     let url = `${API_BASE}?action=${encodeURIComponent(action)}`;
     let options = {
       method: method,
-      headers: { 'Content-Type': 'application/json' },
+      redirect: 'follow',
+      // KUNCI PERBAIKAN: Gunakan text/plain untuk hindari CORS Preflight
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' }, 
     };
 
     if (method === 'GET') {
-      // Tambahkan parameter ke query string
       const queryParams = Object.keys(params)
         .filter(k => params[k] !== undefined && params[k] !== null && params[k] !== '')
         .map(k => `${encodeURIComponent(k)}=${encodeURIComponent(params[k])}`)
         .join('&');
       if (queryParams) url += '&' + queryParams;
     } else {
-      // POST – body JSON
+      // POST – body JSON dalam format text/plain
       options.body = JSON.stringify(params);
     }
 
@@ -844,7 +845,7 @@
     reader.readAsDataURL(file);
   }
 
-  // ---------- IMPORT CSV ----------
+  // ---------- IMPORT CSV (REVISI BATCH) ----------
   async function handleImportCSV() {
     const input = document.getElementById('csv-upload');
     const msg = document.getElementById('msg-csv-import');
@@ -879,34 +880,36 @@
       btn.textContent = 'Mengimpor...';
       msg.className = 'msg';
 
-      let sukses = 0, gagal = 0;
+      // REVISI: Kumpulkan semua data lalu kirim sekaligus
+      const dataArray = [];
       for (let i = 1; i < lines.length; i++) {
         const values = lines[i].split(',').map(v => v.trim());
         const data = {};
         headers.forEach((h, idx) => { data[h] = values[idx] || ''; });
-        const payload = {
+        dataArray.push({
           kode_barang: data.kode_barang,
           nama_barang: data.nama_barang,
           kategori: data.kategori || '',
           satuan: data.satuan || 'pcs',
           harga_terakhir: Number(data.harga_terakhir) || 0,
           status_kepemilikan: data.status_kepemilikan || 'Milik RS'
-        };
-        try {
-          const res = await apiCall('simpanBarangMaster', payload, 'POST');
-          if (res.sukses) sukses++;
-          else gagal++;
-        } catch (err) {
-          gagal++;
-        }
+        });
       }
 
-      btn.disabled = false;
-      btn.textContent = 'Import CSV';
-      msg.textContent = `✅ ${sukses} berhasil, ❌ ${gagal} gagal.`;
-      msg.className = 'msg show ' + (gagal === 0 ? 'ok' : 'err');
-      if (sukses > 0) muatMasterBarang();
-      input.value = '';
+      try {
+        // Panggil API sekali dengan payload batch
+        const res = await apiCall('importBarangBatch', { items: dataArray }, 'POST');
+        msg.textContent = res.pesan || `✅ ${dataArray.length} barang berhasil diimport.`;
+        msg.className = 'msg show ' + (res.sukses ? 'ok' : 'err');
+        if (res.sukses) muatMasterBarang();
+      } catch (err) {
+        msg.textContent = 'Error: ' + err.message;
+        msg.className = 'msg show err';
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Import CSV';
+        input.value = '';
+      }
     };
     reader.onerror = function() {
       msg.textContent = 'Gagal membaca file.';
