@@ -407,7 +407,7 @@
     reader.readAsDataURL(file);
   }
 
-  // ---------- IMPORT CSV (REVISI BATCH) ----------
+  // ---------- IMPORT CSV MASTER BARANG ----------
   async function handleImportCSV() {
     const input = document.getElementById('csv-upload'); const msg = document.getElementById('msg-csv-import'); const file = input.files && input.files[0];
     if (!file) { msg.textContent = 'Pilih file CSV terlebih dahulu.'; msg.className = 'msg show err'; return; }
@@ -455,16 +455,116 @@
     catch (err) { msg.textContent = 'Error: ' + err.message; msg.className = 'msg show err'; } finally { btn.disabled = false; btn.textContent = 'Simpan'; }
   }
 
-  // ---------- TRANSAKSI ----------
+  // ---------- TRANSAKSI (MASUK, MUTASI, KELUAR) ----------
   function renderMasukPanel() { renderTransaksiForm('masuk', 'Barang Masuk', 'Catat penerimaan dari gudang farmasi'); }
   function renderMutasiPanel() { renderTransaksiForm('mutasi', 'Mutasi', 'Pindahan dari gudang lain'); }
   function renderKeluarPanel() { renderTransaksiForm('keluar', 'Pengeluaran', 'Pemakaian untuk pasien'); }
   function renderTransaksiForm(jenis, title, desc) {
     const fields = getFieldsForJenis(jenis);
-    pageContent.innerHTML = `<div class="card"><h3>${title}</h3><div class="sub">${desc}</div><form id="form-${jenis}"><div class="field-grid">${fields.map(f => `<div class="field${f.full ? ' full' : ''}"><label>${f.label}${f.required ? ' *' : ''}</label>${f.type === 'select' ? `<select name="${f.name}" ${f.required ? 'required' : ''} class="${f.class || ''}"></select>` : `<input type="${f.type}" name="${f.name}" ${f.required ? 'required' : ''} ${f.placeholder ? `placeholder="${f.placeholder}"` : ''}>`}</div>`).join('')}</div><button class="btn" type="submit">Simpan</button><div class="msg" id="msg-${jenis}"></div></form></div>`;
+    let extraHtml = '';
+    // Tambahkan card upload khusus untuk jenis keluar
+    if (jenis === 'keluar') {
+      extraHtml = `
+        <div class="card" style="border: 2px dashed #0b5d5a; margin-bottom: 20px;">
+          <h3>📤 Import Pemakaian dari CSV</h3>
+          <div class="sub">Format CSV: tanggal,kode_barang,nama_barang,jumlah,status_kepemilikan,tujuan,nama_pasien,no_rekam_medik</div>
+          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+            <input type="file" id="csv-pengeluaran" accept=".csv">
+            <button class="btn" id="btn-import-pengeluaran">Import CSV</button>
+          </div>
+          <div class="msg" id="msg-csv-pengeluaran"></div>
+        </div>`;
+    }
+
+    pageContent.innerHTML = `
+      <div class="card">
+        <h3>${title}</h3>
+        <div class="sub">${desc}</div>
+        <form id="form-${jenis}">
+          <div class="field-grid">
+            ${fields.map(f => `<div class="field${f.full ? ' full' : ''}"><label>${f.label}${f.required ? ' *' : ''}</label>${f.type === 'select' ? `<select name="${f.name}" ${f.required ? 'required' : ''} class="${f.class || ''}"></select>` : `<input type="${f.type}" name="${f.name}" ${f.required ? 'required' : ''} ${f.placeholder ? `placeholder="${f.placeholder}"` : ''}>`}</div>`).join('')}
+          </div>
+          <button class="btn" type="submit">Simpan</button>
+          <div class="msg" id="msg-${jenis}"></div>
+        </form>
+      </div>
+      ${extraHtml}
+    `;
     muatBarangDropdown('#form-' + jenis + ' [name="kode_barang"]'); if (jenis === 'masuk' || jenis === 'mutasi') muatStatusDropdown('#form-' + jenis + ' [name="status_kepemilikan"]');
     document.getElementById('form-' + jenis).addEventListener('submit', function(e) { e.preventDefault(); handleTransaksiSubmit(jenis); });
+
+    // Tambahkan event listener untuk import pengeluaran
+    if (jenis === 'keluar') {
+      document.getElementById('btn-import-pengeluaran').addEventListener('click', handleImportPengeluaran);
+    }
   }
+
+  // Fungsi Import Pengeluaran (CSV)
+  async function handleImportPengeluaran() {
+    const input = document.getElementById('csv-pengeluaran');
+    const msg = document.getElementById('msg-csv-pengeluaran');
+    const file = input.files && input.files[0];
+    if (!file) { msg.textContent = 'Pilih file CSV terlebih dahulu.'; msg.className = 'msg show err'; return; }
+
+    const reader = new FileReader();
+    reader.onload = async function(e) {
+      const text = e.target.result;
+      const lines = text.split('\n').filter(line => line.trim() !== '');
+      if (lines.length < 2) { msg.textContent = 'File CSV kosong atau hanya header.'; msg.className = 'msg show err'; return; }
+
+      const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
+      const expected = ['tanggal', 'kode_barang', 'jumlah'];
+      const missing = expected.filter(h => headers.indexOf(h) === -1);
+      if (missing.length) { msg.textContent = 'Header tidak lengkap. Butuh: ' + expected.join(', '); msg.className = 'msg show err'; return; }
+
+      const btn = document.getElementById('btn-import-pengeluaran');
+      btn.disabled = true; btn.textContent = 'Mengimpor...';
+      msg.className = 'msg';
+
+      const dataArray = [];
+      for (let i = 1; i < lines.length; i++) {
+        const values = lines[i].split(',').map(v => v.trim());
+        const data = {};
+        headers.forEach((h, idx) => { data[h] = values[idx] || ''; });
+        // Pastikan jumlah dan kode ada
+        if (!data.kode_barang || !data.jumlah) continue;
+        // Isi default untuk kolom opsional
+        if (!data.nama_pasien) data.nama_pasien = '-';
+        if (!data.no_rekam_medik) data.no_rekam_medik = '-';
+        if (!data.tujuan) data.tujuan = 'Import Historis';
+        if (!data.status_kepemilikan) data.status_kepemilikan = '';
+        if (!data.no_batch) data.no_batch = '';
+
+        dataArray.push({
+          tanggal: data.tanggal,
+          kode_barang: data.kode_barang,
+          jumlah: Number(data.jumlah) || 0,
+          no_batch: data.no_batch,
+          nama_pasien: data.nama_pasien,
+          no_rekam_medik: data.no_rekam_medik,
+          tujuan: data.tujuan,
+          status_kepemilikan: data.status_kepemilikan
+        });
+      }
+
+      try {
+        // Kirim batch ke backend
+        const res = await apiCall('importPengeluaranBatch', { items: dataArray }, 'POST');
+        msg.textContent = res.pesan || `✅ ${dataArray.length} transaksi berhasil diimport.`;
+        msg.className = 'msg show ' + (res.sukses ? 'ok' : 'err');
+        if (res.sukses) input.value = '';
+      } catch (err) {
+        msg.textContent = 'Error: ' + err.message;
+        msg.className = 'msg show err';
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Import CSV';
+      }
+    };
+    reader.onerror = function() { msg.textContent = 'Gagal membaca file.'; msg.className = 'msg show err'; };
+    reader.readAsText(file);
+  }
+
   function getFieldsForJenis(jenis) {
     const base = [{ name: 'tanggal', label: 'Tanggal', type: 'date', required: true }, { name: 'kode_barang', label: 'Barang', type: 'select', required: true, class: 'pilih-barang' }, { name: 'jumlah', label: 'Jumlah', type: 'number', required: true }];
     if (jenis === 'masuk') return base.concat([{ name: 'harga_satuan', label: 'Harga Satuan', type: 'number', required: true }, { name: 'no_batch', label: 'No. Batch', type: 'text', required: true }, { name: 'tgl_expired', label: 'Tgl Kadaluarsa', type: 'date', required: true }, { name: 'status_kepemilikan', label: 'Status Kepemilikan', type: 'select', required: true, class: 'pilih-status-wajib' }, { name: 'sumber', label: 'Sumber', type: 'text', required: false }]);
