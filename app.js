@@ -42,11 +42,19 @@ onAuthChange((event, session) => {
     currentUser = session.user;
     loginScreen.style.display = 'none'; appScreen.classList.add('show');
     userDisplay.textContent = `👤 ${currentUser.email}`;
-    navigateTo('stok');
+    if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
+       navigateTo('stok');
+    }
   } else {
+    // Jika session habis / tidak ada (JWT expired / logout)
     currentUser = null;
     appScreen.classList.remove('show'); loginScreen.style.display = 'flex';
     loginBtn.disabled = false; loginBtn.textContent = 'Masuk'; loginForm.reset();
+    if (event === 'SIGNED_OUT' || event === 'TOKEN_REFRESHED') {
+      // Opsional: Tampilkan pesan di halaman login
+      loginError.textContent = 'Sesi Anda telah berakhir. Silakan login kembali.';
+      loginError.style.display = 'block';
+    }
   }
 });
 
