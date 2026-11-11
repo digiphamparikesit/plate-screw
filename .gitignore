@@ -1,5 +1,7 @@
-# Config rahasia (berisi URL + key asli)
-config.js
+# Config — DI-COMMIT untuk GitHub Pages (static hosting)
+# karena browser perlu akses config.js saat runtime
+# Keamanan bergantung pada RLS Supabase, bukan pada sembunyikan key
+# config.js
 
 # OS
 .DS_Store
@@ -12,3 +14,6 @@ Thumbs.db
 
 # Log
 *.log
+
+# Test file (jangan ikut commit)
+test.html
