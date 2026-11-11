@@ -794,7 +794,7 @@ async function renderMutasiPanel() {
 }
 
 // ============================================================
-// 8. PANEL PENGELUARAN (Untuk Pasien)
+// 8. PANEL PENGELUARAN (REVISI: Riwayat, Edit, Hapus)
 // ============================================================
 async function renderKeluarPanel() {
   try {
@@ -811,10 +811,12 @@ async function renderKeluarPanel() {
       </option>
     `).join('');
 
+    // Ambil Riwayat Pengeluaran
+    const riwayat = await selectView('v_laporan_pemakaian_sp', { order: { column: 'created_at', ascending: false }, limit: 50 });
+
     pageContent.innerHTML = `
       <div class="card">
         <h3>Pengeluaran Barang (Pasien)</h3>
-        <div class="sub">Catat pemakaian Plate/Screw untuk tindakan operasi.</div>
         <form id="form-keluar">
           <div class="field-grid">
             <div class="field"><label>Tanggal Pakai *</label><input type="date" name="tanggal" id="keluar-tgl" required></div>
@@ -826,7 +828,6 @@ async function renderKeluarPanel() {
               </select>
             </div>
             <div class="field"><label>Jumlah Dipakai *</label><input type="number" name="jumlah" min="1" required></div>
-            
             <div class="field full" style="border-top:1px dashed var(--border); padding-top:14px; margin-top:8px;">
               <label style="font-weight:700;color:var(--primary);">Data Pasien</label>
             </div>
@@ -838,16 +839,65 @@ async function renderKeluarPanel() {
           <div class="msg" id="msg-keluar"></div>
         </form>
       </div>
+
+      <div class="card">
+        <h3>Riwayat Pengeluaran (50 Terakhir)</h3>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Tanggal</th><th>Pasien (RM)</th><th>Barang</th><th class="num">Jumlah</th><th>Aksi</th></tr></thead><tbody>
+          ${riwayat.length === 0 ? '<tr><td colspan="5" class="empty">Belum ada riwayat pengeluaran.</td></tr>' : ''}
+          ${riwayat.map(r => `<tr>
+            <td>${new Date(r.tanggal).toLocaleDateString('id-ID')}</td>
+            <td>${escapeHtml(r.nama_pasien)} <br><small>${escapeHtml(r.no_rekam_medik)}</small></td>
+            <td>${escapeHtml(r.nama_barang)}</td>
+            <td class="num">${angka(r.jumlah)}</td>
+            <td>
+              <button class="btn secondary btn-edit-keluar" 
+                data-id="${r.id}" 
+                data-tgl="${r.tanggal}" 
+                data-jml="${r.jumlah}" 
+                data-pasien="${r.nama_pasien}" 
+                data-rm="${r.no_rekam_medik}" 
+                data-tujuan="${r.tujuan}"
+                style="padding:4px 10px;font-size:11px;margin-right:4px;">Edit</button>
+              <button class="btn secondary btn-hapus-keluar" data-id="${r.id}" style="padding:4px 10px;font-size:11px;background:#fbeae8;color:var(--danger);">Hapus</button>
+            </td>
+          </tr>`).join('')}
+        </tbody></table></div>
+      </div>
+
+      <!-- MODAL EDIT PENGELUARAN -->
+      <div id="modal-edit-keluar" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:9999; align-items:center; justify-content:center;">
+        <div style="background:#fff; padding:24px; border-radius:12px; width:100%; max-width:500px;">
+          <h3 style="margin-bottom:16px;">Edit Pengeluaran</h3>
+          <form id="form-edit-keluar">
+            <input type="hidden" name="id">
+            <div class="field-grid" style="grid-template-columns: 1fr 1fr;">
+              <div class="field full"><label>Tanggal *</label><input type="date" name="tanggal" required></div>
+              <div class="field full"><label>Jumlah Dipakai *</label><input type="number" name="jumlah" min="1" required></div>
+              <div class="field full" style="border-top:1px dashed var(--border); padding-top:14px;"><label style="font-weight:700;color:var(--primary);">Data Pasien</label></div>
+              <div class="field full"><label>Nama Pasien *</label><input type="text" name="nama_pasien" required></div>
+              <div class="field full"><label>No. Rekam Medik *</label><input type="text" name="no_rm" required></div>
+              <div class="field full"><label>Tujuan *</label><input type="text" name="tujuan" required></div>
+            </div>
+            <div style="margin-top:20px; display:flex; gap:10px; justify-content:flex-end;">
+              <button type="button" class="btn secondary" id="btn-batal-edit-keluar">Batal</button>
+              <button type="submit" class="btn" id="btn-submit-edit-keluar">Simpan Perubahan</button>
+            </div>
+            <div class="msg" id="msg-edit-keluar" style="margin-top:10px;"></div>
+          </form>
+        </div>
+      </div>
     `;
 
     document.getElementById('keluar-tgl').value = todayISO();
 
+    // 1. Submit Baru
     document.getElementById('form-keluar').addEventListener('submit', async (e) => {
       e.preventDefault();
       const btn = document.getElementById('btn-keluar'); btn.disabled = true; btn.textContent = 'Memproses...';
       const msg = document.getElementById('msg-keluar'); msg.className = 'msg';
       const form = e.target;
-      const batchInfo = form.batch_info.value.split('|'); // [barang_id, batch_id, kode_barang]
+      const batchInfo = form.batch_info.value.split('|');
 
       if (batchInfo.length < 3) {
         msg.textContent = '❌ Pilih barang yang valid.'; msg.className = 'msg show err';
@@ -862,14 +912,67 @@ async function renderKeluarPanel() {
           p_nama_pasien: form.nama_pasien.value.trim(), p_no_rm: form.no_rm.value.trim(),
           p_tujuan: form.tujuan.value.trim()
         });
-        msg.textContent = '✅ Pengeluaran berhasil dicatat.'; msg.className = 'msg show ok';
-        form.reset(); document.getElementById('keluar-tgl').value = todayISO();
-        setTimeout(() => renderKeluarPanel(), 1500);
+        msg.textContent = '✅ Pengeluaran dicatat.'; msg.className = 'msg show ok';
+        setTimeout(() => renderKeluarPanel(), 1000);
       } catch (err) {
         msg.textContent = '❌ ' + err.message; msg.className = 'msg show err';
         btn.disabled = false; btn.textContent = 'Simpan Pengeluaran';
       }
     });
+
+    // 2. Hapus
+    document.querySelectorAll('.btn-hapus-keluar').forEach(btn => {
+      btn.addEventListener('click', async function() {
+        if (!confirm('Yakin batalkan pengeluaran ini? Stok akan kembali ke IBS.')) return;
+        this.disabled = true; this.textContent = '...';
+        try {
+          await callRpc('rpc_hapus_pengeluaran', { p_transaksi_id: this.dataset.id });
+          renderKeluarPanel();
+        } catch (err) { alert(err.message); this.disabled = false; this.textContent = 'Hapus'; }
+      });
+    });
+
+    // 3. Buka Modal Edit
+    const modal = document.getElementById('modal-edit-keluar');
+    document.querySelectorAll('.btn-edit-keluar').forEach(btn => {
+      btn.addEventListener('click', function() {
+        const form = document.getElementById('form-edit-keluar');
+        form.id.value = this.dataset.id;
+        form.tanggal.value = this.dataset.tgl;
+        form.jumlah.value = this.dataset.jml;
+        form.nama_pasien.value = this.dataset.pasien;
+        form.no_rm.value = this.dataset.rm;
+        form.tujuan.value = this.dataset.tujuan;
+        modal.style.display = 'flex';
+      });
+    });
+
+    document.getElementById('btn-batal-edit-keluar').addEventListener('click', () => modal.style.display = 'none');
+
+    // 4. Submit Edit
+    document.getElementById('form-edit-keluar').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById('btn-submit-edit-keluar'); btn.disabled = true; btn.textContent = 'Menyimpan...';
+      const msg = document.getElementById('msg-edit-keluar'); msg.className = 'msg';
+      const form = e.target;
+
+      try {
+        await callRpc('rpc_edit_pengeluaran', {
+          p_transaksi_id: form.id.value,
+          p_tanggal: form.tanggal.value,
+          p_jumlah: Number(form.jumlah.value),
+          p_nama_pasien: form.nama_pasien.value.trim(),
+          p_no_rm: form.no_rm.value.trim(),
+          p_tujuan: form.tujuan.value.trim()
+        });
+        msg.textContent = '✅ Berhasil diupdate.'; msg.className = 'msg show ok';
+        setTimeout(() => { modal.style.display = 'none'; renderKeluarPanel(); }, 1000);
+      } catch (err) {
+        msg.textContent = '❌ ' + err.message; msg.className = 'msg show err';
+        btn.disabled = false; btn.textContent = 'Simpan Perubahan';
+      }
+    });
+
   } catch (err) {
     pageContent.innerHTML = `<div class="card"><div class="msg show err">Gagal: ${err.message}</div></div>`;
   }
