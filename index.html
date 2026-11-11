@@ -2,101 +2,305 @@
 <html lang="id">
 <head>
   <meta charset="utf-8">
-  <title>Test Koneksi Supabase</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Inventori Plate & Screw — IBS</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
   <style>
-    body { font-family: system-ui, sans-serif; padding: 24px; max-width: 800px; margin: auto; }
-    pre { background: #f4f4f4; padding: 16px; border-radius: 8px; white-space: pre-wrap; word-break: break-word; }
-    .ok { color: #0a7a3f; font-weight: 600; }
-    .err { color: #b3352c; font-weight: 600; }
-    .warn { color: #b4611e; font-weight: 600; }
+    /* ===== RESET & VARIABEL ===== */
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    :root {
+      --primary: #0b3b39;
+      --primary-light: #157a73;
+      --bg: #f4f7f6;
+      --text: #1a2a28;
+      --text-muted: #566461;
+      --border: #e2e8e6;
+      --card-bg: #ffffff;
+      --danger: #b3352c;
+      --warning: #b4611e;
+      --success: #0a7a3f;
+    }
+    body {
+      font-family: 'Inter', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      height: 100vh;
+      overflow: hidden;
+      display: flex;
+    }
+
+    /* ===== HALAMAN LOGIN ===== */
+    #login-screen {
+      position: fixed; inset: 0;
+      background: var(--primary);
+      display: flex; align-items: center; justify-content: center;
+      z-index: 1000;
+      transition: opacity 0.3s;
+    }
+    .login-box {
+      background: #fff; padding: 32px 40px; border-radius: 12px;
+      width: 100%; max-width: 400px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+    }
+    .login-box h1 { font-size: 24px; color: var(--primary); margin-bottom: 4px; text-align: center; }
+    .login-box p { font-size: 13px; color: var(--text-muted); text-align: center; margin-bottom: 24px; }
+    .login-box .field { margin-bottom: 16px; display: flex; flex-direction: column; gap: 6px; }
+    .login-box label { font-size: 13px; font-weight: 500; color: #3f5451; }
+    .login-box input {
+      padding: 10px 12px; border: 1px solid var(--border); border-radius: 6px;
+      font: inherit; font-size: 14px;
+    }
+    .login-box input:focus { outline: 2px solid var(--primary-light); border-color: transparent; }
+    .login-box button {
+      width: 100%; padding: 12px; background: var(--primary); color: #fff;
+      border: none; border-radius: 6px; font-weight: 600; font-size: 14px;
+      cursor: pointer; transition: background 0.2s; margin-top: 8px;
+    }
+    .login-box button:hover { background: var(--primary-light); }
+    .login-box button:disabled { opacity: 0.6; cursor: default; }
+    .login-error {
+      margin-top: 12px; padding: 10px; background: #fbeae8; color: var(--danger);
+      border-radius: 6px; font-size: 13px; display: none;
+    }
+
+    /* ===== LAYOUT UTAMA ===== */
+    #app-screen {
+      display: flex; width: 100%; height: 100vh;
+      opacity: 0; pointer-events: none; transition: opacity 0.3s;
+    }
+    #app-screen.show { opacity: 1; pointer-events: auto; }
+
+    /* SIDEBAR */
+    .sidebar {
+      width: 260px; background: var(--primary); color: #e0edeb;
+      display: flex; flex-direction: column; flex-shrink: 0;
+      height: 100vh; overflow-y: auto;
+    }
+    .sidebar-brand {
+      padding: 24px 20px 16px; border-bottom: 1px solid rgba(255,255,255,0.08);
+    }
+    .sidebar-brand h1 { font-size: 18px; font-weight: 700; color: #fff; display: flex; align-items: center; gap: 8px; }
+    .sidebar-brand small { display: block; font-size: 12px; color: #9bb7b4; margin-top: 4px; }
+    
+    .sidebar-nav {
+      flex: 1; padding: 16px 12px;
+      display: flex; flex-direction: column; gap: 4px;
+    }
+    .menu-item {
+      display: flex; align-items: center; gap: 12px;
+      padding: 10px 14px; border-radius: 8px;
+      font-size: 14px; font-weight: 500; color: #c4dbd8;
+      cursor: pointer; transition: background 0.15s, color 0.15s;
+      border: none; background: transparent; width: 100%; text-align: left;
+    }
+    .menu-item:hover { background: rgba(255,255,255,0.07); color: #fff; }
+    .menu-item.active { background: var(--primary-light); color: #fff; box-shadow: 0 2px 6px rgba(0,0,0,0.15); }
+    .menu-item .icon { font-size: 18px; width: 24px; text-align: center; flex-shrink: 0; }
+    
+    /* BADGE NOTIFIKASI */
+    .menu-item .badge-notif {
+      margin-left: auto; background: var(--danger); color: #fff;
+      font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 12px;
+      display: none;
+    }
+    .menu-item .badge-notif.show { display: inline-block; animation: pulse 2s infinite; }
+    @keyframes pulse {
+      0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(179, 53, 44, 0.7); }
+      70% { transform: scale(1); box-shadow: 0 0 0 6px rgba(179, 53, 44, 0); }
+      100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(179, 53, 44, 0); }
+    }
+
+    .sidebar-footer {
+      padding: 16px 20px; border-top: 1px solid rgba(255,255,255,0.06);
+      font-size: 12px; color: #7fa09c;
+    }
+
+    /* MAIN CONTENT */
+    .main-content {
+      flex: 1; display: flex; flex-direction: column;
+      min-width: 0; height: 100vh; overflow: hidden;
+    }
+    .topbar {
+      background: var(--card-bg); padding: 16px 28px;
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between;
+      flex-shrink: 0;
+    }
+    .topbar h2 { font-size: 18px; font-weight: 600; color: var(--primary); }
+    .topbar .user-info { font-size: 13px; color: var(--text-muted); display: flex; align-items: center; gap: 12px; }
+    .btn-logout {
+      background: none; border: 1px solid var(--border); padding: 6px 12px;
+      border-radius: 6px; cursor: pointer; font-size: 12px; color: var(--text);
+      transition: all 0.15s;
+    }
+    .btn-logout:hover { background: #fbeae8; color: var(--danger); border-color: #fbeae8; }
+
+    .page-content {
+      flex: 1; overflow-y: auto; padding: 24px 28px 40px; background: var(--bg);
+    }
+
+    /* ===== KOMPONEN UMUM ===== */
+    .card {
+      background: var(--card-bg); border-radius: 12px; padding: 20px 24px;
+      margin-bottom: 20px; box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+      border: 1px solid var(--border);
+    }
+    .card h3 { font-size: 16px; font-weight: 600; color: var(--primary); margin-bottom: 4px; }
+    .card .sub { font-size: 13px; color: var(--text-muted); margin-bottom: 16px; }
+    
+    .field-grid {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 14px 18px;
+    }
+    .field { display: flex; flex-direction: column; gap: 4px; }
+    .field.full { grid-column: 1 / -1; }
+    .field label { font-size: 12.5px; font-weight: 500; color: #3f5451; }
+    .field input, .field select {
+      padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px;
+      font: inherit; font-size: 13px; background: #fff;
+    }
+    .field input:focus, .field select:focus { outline: 2px solid var(--primary-light); border-color: transparent; }
+    
+    .btn {
+      padding: 9px 18px; border: none; border-radius: 6px;
+      font-weight: 600; font-size: 13px; cursor: pointer;
+      background: var(--primary); color: #fff; transition: background 0.15s;
+    }
+    .btn:hover { background: var(--primary-light); }
+    .btn.secondary { background: #e4efed; color: var(--primary); }
+    .btn.secondary:hover { background: #d0e3e0; }
+    .btn:disabled { opacity: 0.6; cursor: default; }
+
+    .msg { margin-top: 12px; padding: 10px 14px; border-radius: 6px; font-size: 13px; display: none; }
+    .msg.show { display: block; }
+    .msg.ok { background: #e4f0ee; color: var(--success); }
+    .msg.err { background: #fbeae8; color: var(--danger); }
+
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid #e8eeec; }
+    th { font-size: 11px; text-transform: uppercase; letter-spacing: 0.03em; color: var(--text-muted); font-weight: 600; }
+    td.num { text-align: right; font-family: monospace; }
+    tr.anomaly td { background: #fbeae8; }
+    tr.expiring td { background: #fbecdd; }
+    
+    .badge { display: inline-block; padding: 2px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; }
+    .badge.warn { background: var(--warning); color: #fff; }
+    .badge.bad { background: var(--danger); color: #fff; }
+
+    .totals {
+      display: flex; justify-content: flex-end; gap: 30px; margin-top: 14px; font-family: monospace;
+    }
+    .totals .n { font-size: 18px; font-weight: 600; color: var(--primary); }
+    .totals .l { display: block; font-size: 11px; color: var(--text-muted); font-family: 'Inter', sans-serif; }
+
+    .paginasi {
+      display: flex; justify-content: space-between; align-items: center;
+      margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border);
+      font-size: 13px; color: var(--text-muted);
+    }
+    .paginasi .btn-halaman {
+      padding: 5px 14px; border: 1px solid var(--border); border-radius: 6px;
+      background: #fff; cursor: pointer; font-weight: 500;
+    }
+    .paginasi .btn-halaman:disabled { opacity: 0.4; cursor: default; }
+    .empty { text-align: center; padding: 40px 10px; color: var(--text-muted); }
+
+    /* RESPONSIVE */
+    @media (max-width: 768px) {
+      .sidebar { width: 70px; }
+      .sidebar-brand h1 span, .sidebar-brand small, .menu-item span:not(.icon):not(.badge-notif) { display: none; }
+      .menu-item { justify-content: center; padding: 12px; }
+      .menu-item .badge-notif { position: absolute; top: 4px; right: 4px; padding: 2px 4px; font-size: 9px; }
+      .field-grid { grid-template-columns: 1fr; }
+      .topbar { padding: 12px 16px; }
+      .page-content { padding: 16px; }
+    }
   </style>
 </head>
 <body>
-  <h2>🔌 Test Koneksi Supabase</h2>
-  <pre id="out">Memuat…</pre>
 
-  <script type="module">
-    import { sb, selectView, callRpc, signIn, signOut } from './supabase-client.js';
+  <!-- ================= LAYAR LOGIN ================= -->
+  <div id="login-screen">
+    <div class="login-box">
+      <h1>🛠 P·S Inventori</h1>
+      <p>Sistem Informasi Plate & Screw IBS</p>
+      <form id="login-form">
+        <div class="field">
+          <label>Email</label>
+          <input type="email" id="login-email" placeholder="admin@rsud.go.id" required autocomplete="username">
+        </div>
+        <div class="field">
+          <label>Password</label>
+          <input type="password" id="login-password" placeholder="••••••••" required autocomplete="current-password">
+        </div>
+        <button type="submit" id="login-btn">Masuk</button>
+        <div class="login-error" id="login-error"></div>
+      </form>
+    </div>
+  </div>
 
-    const out = document.getElementById('out');
-    const log = (html) => { out.innerHTML += '\n' + html; };
+  <!-- ================= LAYAR APLIKASI ================= -->
+  <div id="app-screen">
+    
+    <!-- SIDEBAR -->
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <h1>🛠 <span>P·S IBS</span></h1>
+        <small>Ruang Farmasi Bedah Sentral</small>
+      </div>
+      
+      <nav class="sidebar-nav">
+        <!-- Data Master -->
+        <button class="menu-item active" data-tab="stok"><span class="icon">📦</span> <span>Stok Saat Ini</span></button>
+        <button class="menu-item" data-tab="masterbarang"><span class="icon">📋</span> <span>Master Barang</span></button>
+        <button class="menu-item" data-tab="parlevel"><span class="icon">🎯</span> <span>Par Level</span></button>
+        
+        <!-- Transaksi -->
+        <button class="menu-item" data-tab="masuk"><span class="icon">⬇️</span> <span>Barang Masuk</span></button>
+        <button class="menu-item" data-tab="mutasi"><span class="icon">🔄</span> <span>Mutasi</span></button>
+        <button class="menu-item" data-tab="keluar"><span class="icon">⬆️</span> <span>Pengeluaran</span></button>
+        
+        <!-- Penyesuaian & Approval -->
+        <button class="menu-item" data-tab="penyesuaian"><span class="icon">✏️</span> <span>Penyesuaian</span></button>
+        <button class="menu-item" data-tab="approval"><span class="icon">✅</span> <span>Approval</span></button>
+        
+        <!-- Notifikasi -->
+        <button class="menu-item" data-tab="notifikasi">
+          <span class="icon">🔔</span> <span>Konsinyasi</span>
+          <span class="badge-notif" id="badge-notif">0</span>
+        </button>
+        
+        <!-- Laporan -->
+        <button class="menu-item" data-tab="opname"><span class="icon">📊</span> <span>Laporan Opname</span></button>
+        <button class="menu-item" data-tab="pemakaian"><span class="icon">📈</span> <span>Lap. Pemakaian</span></button>
+        <button class="menu-item" data-tab="kartustok"><span class="icon">📇</span> <span>Kartu Stok</span></button>
+      </nav>
+      
+      <div class="sidebar-footer">
+        v2.0 · Supabase + GitHub Pages
+      </div>
+    </aside>
 
-    (async () => {
-      out.innerHTML = '';
+    <!-- MAIN CONTENT -->
+    <div class="main-content">
+      <header class="topbar">
+        <h2 id="page-title">Stok Saat Ini</h2>
+        <div class="user-info">
+          <span id="user-display">👤 Memuat...</span>
+          <button class="btn-logout" id="btn-logout">Logout</button>
+        </div>
+      </header>
+      
+      <!-- Container tempat panel dimuat oleh app.js -->
+      <div class="page-content" id="page-content">
+        <!-- Konten dinamis -->
+      </div>
+    </div>
 
-      // ── 1. Cek client init ────────────────────────────────
-      try {
-        const url = sb.supabaseUrl;
-        log(`<span class="ok">✅ 1. Client init OK</span>`);
-        log(`   URL: ${url}`);
-      } catch (e) {
-        log(`<span class="err">❌ 1. Client init GAGAL: ${e.message}</span>`);
-        return;
-      }
+  </div>
 
-      // ── 2. Cek baca tabel (tanpa login, harus gagal karena RLS) ──
-      try {
-        const barang = await selectView('master_barang');
-        log(`<span class="warn">⚠️ 2. Baca master_barang TANPA LOGIN berhasil (${barang.length} baris)</span>`);
-        log(`   ⚠️ RLS mungkin belum ketat. Cek policy di Supabase.`);
-      } catch (e) {
-        log(`<span class="ok">✅ 2. Baca tanpa login ditolak (RLS aktif): ${e.message}</span>`);
-      }
-
-      // ── 3. Login sebagai admin ───────────────────────────
-      try {
-        const data = await signIn('admin@rsud.go.id', 'admin123');
-        log(`<span class="ok">✅ 3. Login OK — user: ${data.user.email}</span>`);
-      } catch (e) {
-        log(`<span class="err">❌ 3. Login GAGAL: ${e.message}</span>`);
-        log(`   → Pastikan user admin@rsud.go.id sudah dibuat di Supabase Authentication.`);
-        return;
-      }
-
-      // ── 4. Baca tabel setelah login ──────────────────────
-      try {
-        const barang = await selectView('master_barang');
-        log(`<span class="ok">✅ 4. Baca master_barang setelah login: ${barang.length} barang</span>`);
-        barang.forEach(b => log(`   • ${b.kode_barang} — ${b.nama_barang}`));
-      } catch (e) {
-        log(`<span class="err">❌ 4. Baca GAGAL: ${e.message}</span>`);
-      }
-
-      // ── 5. Test RPC (generate kode) ──────────────────────
-      try {
-        const kode = await callRpc('rpc_generate_kode', { p_prefix: 'PL' });
-        log(`<span class="ok">✅ 5. RPC generate_kode('PL') → ${kode}</span>`);
-        log(`   (harusnya PL-003 karena seed sudah ada 2 plate)`);
-      } catch (e) {
-        log(`<span class="err">❌ 5. RPC GAGAL: ${e.message}</span>`);
-      }
-
-      // ── 6. Cek view stok ─────────────────────────────────
-      try {
-        const stok = await selectView('v_stok_saat_ini');
-        log(`<span class="ok">✅ 6. View v_stok_saat_ini OK: ${stok.length} baris</span>`);
-      } catch (e) {
-        log(`<span class="err">❌ 6. View GAGAL: ${e.message}</span>`);
-      }
-
-      // ── 7. Cek view notifikasi ───────────────────────────
-      try {
-        const notif = await selectView('v_notifikasi_konsinyasi_open');
-        log(`<span class="ok">✅ 7. View notifikasi OK: ${notif.length} open</span>`);
-      } catch (e) {
-        log(`<span class="err">❌ 7. View notifikasi GAGAL: ${e.message}</span>`);
-      }
-
-      // ── 8. Logout ────────────────────────────────────────
-      try {
-        await signOut();
-        log(`<span class="ok">✅ 8. Logout OK</span>`);
-      } catch (e) {
-        log(`<span class="warn">⚠️ 8. Logout: ${e.message}</span>`);
-      }
-
-      log(`\n— Selesai —`);
-    })();
-  </script>
+  <!-- Modul Utama -->
+  <script type="module" src="app.js"></script>
 </body>
 </html>
