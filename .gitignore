@@ -1,0 +1,14 @@
+# Config rahasia (berisi URL + key asli)
+config.js
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+
+# Log
+*.log
