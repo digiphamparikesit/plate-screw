@@ -60,8 +60,8 @@ const tabMap = {
   masuk: { title: 'Barang Masuk', render: renderMasukPanel },
   mutasi: { title: 'Mutasi', render: renderMutasiPanel },
   keluar: { title: 'Pengeluaran', render: renderKeluarPanel },
-  penyesuaian: { title: 'Penyesuaian', render: () => pageContent.innerHTML = '<div class="card">Fitur Penyesuaian segera hadir.</div>' },
-  approval: { title: 'Approval', render: () => pageContent.innerHTML = '<div class="card">Fitur Approval segera hadir.</div>' },
+  penyesuaian: { title: 'Penyesuaian', render: renderPenyesuaianPanel },
+  approval: { title: 'Approval', render: renderApprovalPanel },
   notifikasi: { title: 'Konsinyasi', render: renderNotifikasiPanel },
   opname: { title: 'Laporan Opname', render: () => pageContent.innerHTML = '<div class="card">Fitur Laporan Opname segera hadir.</div>' },
   pemakaian: { title: 'Lap. Pemakaian', render: renderPemakaianPanel },
@@ -719,6 +719,135 @@ async function renderKartuStokPanel() {
         btn.disabled = false; btn.textContent = 'Tampilkan Riwayat';
       }
     });
+  } catch (err) {
+    pageContent.innerHTML = `<div class="card"><div class="msg show err">Gagal: ${err.message}</div></div>`;
+  }
+}
+
+// ============================================================
+// 13. PANEL PENYESUAIAN STOK
+// ============================================================
+async function renderPenyesuaianPanel() {
+  try {
+    const gudang = await selectView('gudang');
+    const master = await selectView('master_barang', { eq: { aktif: true }, order: { column: 'nama_barang' } });
+    
+    let optGudang = gudang.map(g => `<option value="${g.id}">${g.nama}</option>`).join('');
+    let optBarang = master.map(m => `<option value="${m.kode_barang}">${m.kode_barang} - ${m.nama_barang}</option>`).join('');
+
+    pageContent.innerHTML = `
+      <div class="card">
+        <h3>Catat Penyesuaian Stok (Koreksi)</h3>
+        <div class="sub">Gunakan form ini jika ada barang rusak, hilang, atau selisih saat opname.</div>
+        <form id="form-penyesuaian">
+          <div class="field-grid">
+            <div class="field"><label>Tanggal *</label><input type="date" name="tanggal" id="pny-tgl" required></div>
+            <div class="field"><label>Pilih Barang *</label><select name="kode_barang" required><option value="">- Pilih -</option>${optBarang}</select></div>
+            <div class="field"><label>Gudang *</label><select name="gudang_id" required>${optGudang}</select></div>
+            <div class="field">
+              <label>Jenis Penyesuaian *</label>
+              <select name="jenis" required>
+                <option value="tambah">Tambah (Fisik > Sistem)</option>
+                <option value="kurang">Kurang (Fisik < Sistem / Rusak)</option>
+              </select>
+            </div>
+            <div class="field"><label>Jumlah *</label><input type="number" name="jumlah" min="1" required></div>
+            <div class="field full"><label>Alasan *</label><input type="text" name="alasan" required placeholder="Contoh: Barang rusak / Hasil opname bulan ini"></div>
+          </div>
+          <button class="btn" type="submit" style="margin-top:16px;" id="btn-pny">Simpan Penyesuaian</button>
+          <div class="msg" id="msg-pny"></div>
+        </form>
+      </div>
+    `;
+
+    document.getElementById('pny-tgl').value = todayISO();
+
+    document.getElementById('form-penyesuaian').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById('btn-pny'); btn.disabled = true; btn.textContent = 'Menyimpan...';
+      const msg = document.getElementById('msg-pny'); msg.className = 'msg';
+      const form = e.target;
+
+      try {
+        // Karena Anda admin, kita gunakan RPC langsung (self-approve)
+        await callRpc('rpc_penyesuaian_langsung', {
+          p_tanggal: form.tanggal.value, p_kode_barang: form.kode_barang.value,
+          p_gudang_id: form.gudang_id.value, p_jenis: form.jenis.value,
+          p_jumlah: Number(form.jumlah.value), p_alasan: form.alasan.value.trim(),
+          p_status: 'milik_rs', p_vendor_id: null, p_no_batch: '-'
+        });
+        msg.textContent = '✅ Penyesuaian berhasil disimpan.'; msg.className = 'msg show ok';
+        form.reset(); document.getElementById('pny-tgl').value = todayISO();
+      } catch (err) {
+        msg.textContent = '❌ ' + err.message; msg.className = 'msg show err';
+      } finally {
+        btn.disabled = false; btn.textContent = 'Simpan Penyesuaian';
+      }
+    });
+  } catch (err) {
+    pageContent.innerHTML = `<div class="card"><div class="msg show err">Gagal: ${err.message}</div></div>`;
+  }
+}
+
+// ============================================================
+// 14. PANEL APPROVAL (Persetujuan Penyesuaian)
+// ============================================================
+async function renderApprovalPanel() {
+  try {
+    const pending = await selectView('penyesuaian_request', { eq: { status: 'pending' }, order: { column: 'requested_at', ascending: false } });
+
+    let html = `<div class="card">
+      <h3>Daftar Persetujuan (Approval)</h3>
+      <div class="sub">Permintaan penyesuaian stok dari petugas yang menunggu persetujuan Admin.</div>`;
+
+    if (pending.length === 0) {
+      html += `<div class="empty">Tidak ada permintaan penyesuaian yang menunggu.</div>`;
+    } else {
+      html += `<div class="table-wrap"><table>
+        <thead><tr><th>Tanggal</th><th>Barang</th><th>Jenis</th><th class="num">Jumlah</th><th>Alasan</th><th>Aksi</th></tr></thead><tbody>`;
+      
+      pending.forEach(p => {
+        // Kita perlu mencari nama barang berdasarkan barang_id
+        // (Karena view belum menyertakan nama barang, kita gunakan cache jika ada, atau panggil db)
+        html += `<tr id="row-${p.id}">
+          <td>${new Date(p.tanggal).toLocaleDateString('id-ID')}</td>
+          <td>${p.barang_id}</td>
+          <td>${p.jenis.toUpperCase()}</td>
+          <td class="num">${angka(p.jumlah)}</td>
+          <td>${escapeHtml(p.alasan)}</td>
+          <td>
+            <button class="btn btn-approve" data-id="${p.id}" style="padding:4px 10px;font-size:11px;margin-right:4px;">Setujui</button>
+            <button class="btn secondary btn-reject" data-id="${p.id}" style="padding:4px 10px;font-size:11px;background:#fbeae8;color:var(--danger);">Tolak</button>
+          </td>
+        </tr>`;
+      });
+      html += `</tbody></table></div>`;
+    }
+    html += `</div>`;
+    pageContent.innerHTML = html;
+
+    // Event tombol Setujui
+    document.querySelectorAll('.btn-approve').forEach(btn => {
+      btn.addEventListener('click', async function() {
+        this.disabled = true; this.textContent = '...';
+        try {
+          await callRpc('rpc_penyesuaian_approve', { p_request_id: this.dataset.id });
+          renderApprovalPanel();
+        } catch (err) { alert(err.message); this.disabled = false; this.textContent = 'Setujui'; }
+      });
+    });
+
+    // Event tombol Tolak
+    document.querySelectorAll('.btn-reject').forEach(btn => {
+      btn.addEventListener('click', async function() {
+        this.disabled = true; this.textContent = '...';
+        try {
+          await callRpc('rpc_penyesuaian_reject', { p_request_id: this.dataset.id, p_catatan: 'Ditolak Admin' });
+          renderApprovalPanel();
+        } catch (err) { alert(err.message); this.disabled = false; this.textContent = 'Tolak'; }
+      });
+    });
+
   } catch (err) {
     pageContent.innerHTML = `<div class="card"><div class="msg show err">Gagal: ${err.message}</div></div>`;
   }
