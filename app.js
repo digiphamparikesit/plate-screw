@@ -1,7 +1,7 @@
 // ============================================================
-// APP.JS — Bagian 1: Auth & Navigasi Dasar
+// APP.JS — Logika Utama Aplikasi
 // ============================================================
-import { sb, signIn, signOut, getSession, onAuthChange, selectView, escapeHtml, angka, rupiah, todayISO } from './supabase-client.js';
+import { sb, signIn, signOut, onAuthChange, selectView, callRpc, escapeHtml, angka, rupiah, todayISO } from './supabase-client.js';
 
 // Elemen DOM
 const loginScreen = document.getElementById('login-screen');
@@ -15,67 +15,49 @@ const pageTitle = document.getElementById('page-title');
 const pageContent = document.getElementById('page-content');
 const menuItems = document.querySelectorAll('.menu-item');
 
-// State
 let currentUser = null;
+let masterBarangCache = [];
 
 // ============================================================
-// 1. LOGIKA AUTENTIKASI (LOGIN & LOGOUT)
+// 1. AUTENTIKASI
 // ============================================================
 loginForm.addEventListener('submit', async (e) => {
   e.preventDefault();
-  const email = document.getElementById('login-email').value;
-  const password = document.getElementById('login-password').value;
-
-  loginBtn.disabled = true;
-  loginBtn.textContent = 'Memproses...';
+  loginBtn.disabled = true; loginBtn.textContent = 'Memproses...';
   loginError.style.display = 'none';
-
   try {
-    await signIn(email, password);
-    // onAuthChange akan menangani perpindahan layar
+    await signIn(document.getElementById('login-email').value, document.getElementById('login-password').value);
   } catch (err) {
-    loginError.textContent = err.message;
-    loginError.style.display = 'block';
-    loginBtn.disabled = false;
-    loginBtn.textContent = 'Masuk';
+    loginError.textContent = err.message; loginError.style.display = 'block';
+    loginBtn.disabled = false; loginBtn.textContent = 'Masuk';
   }
 });
 
 btnLogout.addEventListener('click', async () => {
-  if (confirm('Yakin ingin keluar?')) {
-    await signOut();
-  }
+  if (confirm('Yakin ingin keluar?')) await signOut();
 });
 
-// Pantau perubahan status login
-onAuthChange(async (event, session) => {
+onAuthChange((event, session) => {
   if (session) {
     currentUser = session.user;
-    loginScreen.style.display = 'none';
-    appScreen.classList.add('show');
+    loginScreen.style.display = 'none'; appScreen.classList.add('show');
     userDisplay.textContent = `👤 ${currentUser.email}`;
-    
-    // Muat halaman default
     navigateTo('stok');
   } else {
     currentUser = null;
-    appScreen.classList.remove('show');
-    loginScreen.style.display = 'flex';
-    loginBtn.disabled = false;
-    loginBtn.textContent = 'Masuk';
-    loginForm.reset();
+    appScreen.classList.remove('show'); loginScreen.style.display = 'flex';
+    loginBtn.disabled = false; loginBtn.textContent = 'Masuk'; loginForm.reset();
   }
 });
 
 // ============================================================
-// 2. NAVIGASI SIDEBAR
+// 2. NAVIGASI
 // ============================================================
 const tabMap = {
   stok: { title: 'Stok Saat Ini', render: renderStokPanel },
-  // Tab lain akan ditambahkan nanti
-  masterbarang: { title: 'Master Barang', render: () => pageContent.innerHTML = '<div class="card">Fitur Master Barang segera hadir.</div>' },
-  parlevel: { title: 'Par Level', render: () => pageContent.innerHTML = '<div class="card">Fitur Par Level segera hadir.</div>' },
-  masuk: { title: 'Barang Masuk', render: () => pageContent.innerHTML = '<div class="card">Fitur Barang Masuk segera hadir.</div>' },
+  masterbarang: { title: 'Master Barang', render: renderMasterPanel },
+  parlevel: { title: 'Par Level', render: renderParLevelPanel },
+  masuk: { title: 'Barang Masuk', render: renderMasukPanel },
   mutasi: { title: 'Mutasi', render: () => pageContent.innerHTML = '<div class="card">Fitur Mutasi segera hadir.</div>' },
   keluar: { title: 'Pengeluaran', render: () => pageContent.innerHTML = '<div class="card">Fitur Pengeluaran segera hadir.</div>' },
   penyesuaian: { title: 'Penyesuaian', render: () => pageContent.innerHTML = '<div class="card">Fitur Penyesuaian segera hadir.</div>' },
@@ -86,9 +68,7 @@ const tabMap = {
   kartustok: { title: 'Kartu Stok', render: () => pageContent.innerHTML = '<div class="card">Fitur Kartu Stok segera hadir.</div>' }
 };
 
-menuItems.forEach(item => {
-  item.addEventListener('click', () => navigateTo(item.dataset.tab));
-});
+menuItems.forEach(item => item.addEventListener('click', () => navigateTo(item.dataset.tab)));
 
 function navigateTo(tab) {
   menuItems.forEach(m => m.classList.toggle('active', m.dataset.tab === tab));
@@ -101,32 +81,17 @@ function navigateTo(tab) {
 }
 
 // ============================================================
-// 3. PANEL STOK SAAT INI (Tabel Sederhana)
+// 3. PANEL STOK SAAT INI
 // ============================================================
 async function renderStokPanel() {
   try {
-    const stok = await selectView('v_stok_saat_ini', { order: { column: 'nama_barang', ascending: true } });
-    
+    const stok = await selectView('v_stok_saat_ini', { order: { column: 'nama_barang' } });
     if (stok.length === 0) {
       pageContent.innerHTML = '<div class="card"><div class="empty">Belum ada stok di gudang.</div></div>';
       return;
     }
-
-    let html = `<div class="card">
-      <h3>Stok Plate & Screw Saat Ini</h3>
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Kode</th>
-              <th>Nama Barang</th>
-              <th>Gudang</th>
-              <th>Status</th>
-              <th class="num">Jumlah</th>
-            </tr>
-          </thead>
-          <tbody>`;
-
+    let html = `<div class="card"><h3>Stok Plate & Screw</h3><div class="table-wrap"><table>
+      <thead><tr><th>Kode</th><th>Nama Barang</th><th>Gudang</th><th>Status</th><th class="num">Jumlah</th></tr></thead><tbody>`;
     stok.forEach(r => {
       html += `<tr>
         <td><strong>${escapeHtml(r.kode_barang)}</strong></td>
@@ -136,11 +101,218 @@ async function renderStokPanel() {
         <td class="num">${angka(r.jumlah)}</td>
       </tr>`;
     });
-
     html += `</tbody></table></div></div>`;
     pageContent.innerHTML = html;
-
   } catch (err) {
-    pageContent.innerHTML = `<div class="card"><div class="msg show err">Gagal memuat stok: ${err.message}</div></div>`;
+    pageContent.innerHTML = `<div class="card"><div class="msg show err">Gagal: ${err.message}</div></div>`;
+  }
+}
+
+// ============================================================
+// 4. PANEL MASTER BARANG
+// ============================================================
+async function renderMasterPanel() {
+  try {
+    const kategori = await selectView('kategori_barang');
+    const master = await selectView('master_barang', { order: { column: 'kode_barang' } });
+    masterBarangCache = master;
+
+    let optKategori = kategori.map(k => `<option value="${k.prefix}">${k.nama} (${k.prefix})</option>`).join('');
+
+    pageContent.innerHTML = `
+      <div class="card">
+        <h3>Tambah Barang Baru</h3>
+        <div class="sub">Pilih kategori, sistem akan membuat kode otomatis.</div>
+        <form id="form-master">
+          <div class="field-grid">
+            <div class="field"><label>Kategori *</label><select name="prefix" required><option value="">- Pilih -</option>${optKategori}</select></div>
+            <div class="field"><label>Nama Barang *</label><input type="text" name="nama_barang" required placeholder="Plate Reconstruction 4.5mm"></div>
+            <div class="field"><label>Satuan *</label><input type="text" name="satuan" value="pcs" required></div>
+            <div class="field"><label>Harga Terakhir (Rp) *</label><input type="number" name="harga_terakhir" min="0" required value="0"></div>
+          </div>
+          <button class="btn" type="submit" style="margin-top:16px;" id="btn-simpan-master">Simpan Barang</button>
+          <div class="msg" id="msg-master"></div>
+        </form>
+      </div>
+      <div class="card">
+        <h3>Daftar Barang</h3>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Kode</th><th>Nama Barang</th><th>Kategori</th><th>Satuan</th><th class="num">Harga</th></tr></thead><tbody>
+          ${master.length === 0 ? '<tr><td colspan="5" class="empty">Belum ada data.</td></tr>' : ''}
+          ${master.map(b => `<tr>
+            <td><strong>${escapeHtml(b.kode_barang)}</strong></td>
+            <td>${escapeHtml(b.nama_barang)}</td>
+            <td>${escapeHtml(b.prefix)}</td>
+            <td>${escapeHtml(b.satuan)}</td>
+            <td class="num">${rupiah(b.harga_terakhir)}</td>
+          </tr>`).join('')}
+        </tbody></table></div>
+      </div>
+    `;
+
+    document.getElementById('form-master').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById('btn-simpan-master'); btn.disabled = true; btn.textContent = 'Menyimpan...';
+      const msg = document.getElementById('msg-master'); msg.className = 'msg';
+      const form = e.target;
+      try {
+        const kodeBaru = await callRpc('rpc_generate_kode', { p_prefix: form.prefix.value });
+        const { error } = await sb.from('master_barang').insert({
+          kode_barang: kodeBaru, prefix: form.prefix.value,
+          nama_barang: form.nama_barang.value.trim(), satuan: form.satuan.value.trim(),
+          harga_terakhir: Number(form.harga_terakhir.value)
+        });
+        if (error) throw new Error(error.message);
+        msg.textContent = `✅ Berhasil! Kode: ${kodeBaru}`; msg.className = 'msg show ok';
+        setTimeout(() => renderMasterPanel(), 1500);
+      } catch (err) {
+        msg.textContent = '❌ ' + err.message; msg.className = 'msg show err';
+        btn.disabled = false; btn.textContent = 'Simpan Barang';
+      }
+    });
+  } catch (err) {
+    pageContent.innerHTML = `<div class="card"><div class="msg show err">Gagal: ${err.message}</div></div>`;
+  }
+}
+
+// ============================================================
+// 5. PANEL PAR LEVEL
+// ============================================================
+async function renderParLevelPanel() {
+  try {
+    const gudang = await selectView('gudang');
+    const vendor = await selectView('vendor');
+    const master = await selectView('master_barang', { eq: { aktif: true }, order: { column: 'nama_barang' } });
+    const parLevel = await selectView('par_level');
+
+    let optGudang = gudang.map(g => `<option value="${g.id}">${g.nama}</option>`).join('');
+    let optVendor = vendor.map(v => `<option value="${v.id}">${v.nama}</option>`).join('');
+    let optBarang = master.map(m => `<option value="${m.kode_barang}">${m.kode_barang} - ${m.nama_barang}</option>`).join('');
+
+    pageContent.innerHTML = `
+      <div class="card">
+        <h3>Setel Par Level</h3>
+        <form id="form-par">
+          <div class="field-grid">
+            <div class="field"><label>Barang *</label><select name="barang_id" required><option value="">- Pilih -</option>${optBarang}</select></div>
+            <div class="field"><label>Gudang *</label><select name="gudang_id" required>${optGudang}</select></div>
+            <div class="field"><label>Status *</label><select name="status" required><option value="milik_rs">Milik RS</option><option value="konsinyasi">Konsinyasi</option></select></div>
+            <div class="field"><label>Vendor (Konsinyasi)</label><select name="vendor_id"><option value="">- Tanpa Vendor -</option>${optVendor}</select></div>
+            <div class="field"><label>Jumlah Standar *</label><input type="number" name="jumlah_standar" min="0" required value="1"></div>
+          </div>
+          <button class="btn" type="submit" style="margin-top:16px;" id="btn-simpan-par">Simpan</button>
+          <div class="msg" id="msg-par"></div>
+        </form>
+      </div>
+      <div class="card">
+        <h3>Daftar Par Level</h3>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Barang</th><th>Gudang</th><th>Status</th><th>Vendor</th><th class="num">Standar</th></tr></thead><tbody>
+          ${parLevel.length === 0 ? '<tr><td colspan="5" class="empty">Belum ada data.</td></tr>' : ''}
+          ${parLevel.map(p => {
+            const brg = master.find(m => m.id === p.barang_id);
+            const gdg = gudang.find(g => g.id === p.gudang_id);
+            const vnd = vendor.find(v => v.id === p.vendor_id);
+            return `<tr>
+              <td>${brg ? escapeHtml(brg.nama_barang) : '-'}</td>
+              <td>${gdg ? escapeHtml(gdg.nama) : '-'}</td>
+              <td>${p.status_kepemilikan === 'konsinyasi' ? '<span class="badge warn">Konsinyasi</span>' : 'Milik RS'}</td>
+              <td>${vnd ? escapeHtml(vnd.nama) : '-'}</td>
+              <td class="num">${angka(p.jumlah_standar)}</td>
+            </tr>`;
+          }).join('')}
+        </tbody></table></div>
+      </div>
+    `;
+
+    const selStatus = document.querySelector('#form-par [name="status"]');
+    const selVendor = document.querySelector('#form-par [name="vendor_id"]');
+    selStatus.addEventListener('change', (e) => {
+      if (e.target.value === 'milik_rs') { selVendor.value = ''; selVendor.disabled = true; } 
+      else { selVendor.disabled = false; }
+    });
+
+    document.getElementById('form-par').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById('btn-simpan-par'); btn.disabled = true; btn.textContent = 'Menyimpan...';
+      const msg = document.getElementById('msg-par'); msg.className = 'msg';
+      const form = e.target;
+      const brg = master.find(m => m.kode_barang === form.barang_id.value);
+      if(!brg) return;
+
+      try {
+        const { error } = await sb.from('par_level').insert({
+          barang_id: brg.id, gudang_id: form.gudang_id.value,
+          status_kepemilikan: form.status.value, vendor_id: form.vendor_id.value || null,
+          jumlah_standar: Number(form.jumlah_standar.value)
+        });
+        if (error) throw new Error(error.message);
+        msg.textContent = '✅ Par level disimpan.'; msg.className = 'msg show ok';
+        setTimeout(() => renderParLevelPanel(), 1500);
+      } catch (err) {
+        msg.textContent = '❌ ' + err.message; msg.className = 'msg show err';
+        btn.disabled = false; btn.textContent = 'Simpan';
+      }
+    });
+  } catch (err) {
+    pageContent.innerHTML = `<div class="card"><div class="msg show err">Gagal: ${err.message}</div></div>`;
+  }
+}
+
+// ============================================================
+// 6. PANEL BARANG MASUK
+// ============================================================
+async function renderMasukPanel() {
+  try {
+    const master = await selectView('master_barang', { eq: { aktif: true }, order: { column: 'nama_barang' } });
+    const vendor = await selectView('vendor', { order: { column: 'nama' } });
+    
+    let optBarang = master.map(m => `<option value="${m.kode_barang}">${m.kode_barang} - ${m.nama_barang}</option>`).join('');
+    let optVendor = vendor.map(v => `<option value="${v.nama}">${v.nama}</option>`).join('');
+
+    pageContent.innerHTML = `
+      <div class="card">
+        <h3>Penerimaan Barang Masuk</h3>
+        <div class="sub">Catat barang yang datang dari distributor ke Gudang Farmasi.</div>
+        <form id="form-masuk">
+          <div class="field-grid">
+            <div class="field"><label>Tanggal *</label><input type="date" name="tanggal" id="masuk-tgl" required></div>
+            <div class="field"><label>Pilih Barang *</label><select name="kode_barang" required><option value="">- Pilih -</option>${optBarang}</select></div>
+            <div class="field"><label>Jumlah *</label><input type="number" name="jumlah" min="1" required></div>
+            <div class="field"><label>Harga Satuan (Rp) *</label><input type="number" name="harga" min="0" required></div>
+            <div class="field"><label>Vendor (Ketik/Pilih)</label><input type="text" name="vendor" list="list-vendor" placeholder="Nama PT..."><datalist id="list-vendor">${optVendor}</datalist></div>
+            <div class="field"><label>No. Batch (Opsional)</label><input type="text" name="no_batch" placeholder="-"></div>
+          </div>
+          <button class="btn" type="submit" style="margin-top:16px;" id="btn-masuk">Simpan Penerimaan</button>
+          <div class="msg" id="msg-masuk"></div>
+        </form>
+      </div>
+    `;
+
+    document.getElementById('masuk-tgl').value = todayISO();
+
+    document.getElementById('form-masuk').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById('btn-masuk'); btn.disabled = true; btn.textContent = 'Menyimpan...';
+      const msg = document.getElementById('msg-masuk'); msg.className = 'msg';
+      const form = e.target;
+
+      try {
+        await callRpc('rpc_barang_masuk', {
+          p_tanggal: form.tanggal.value, p_kode_barang: form.kode_barang.value,
+          p_jumlah: Number(form.jumlah.value), p_harga: Number(form.harga.value),
+          p_vendor: form.vendor.value.trim() || null, p_no_batch: form.no_batch.value.trim() || '-',
+          p_keterangan: null
+        });
+        msg.textContent = '✅ Barang masuk berhasil dicatat ke Gudang Farmasi.'; msg.className = 'msg show ok';
+        form.reset(); document.getElementById('masuk-tgl').value = todayISO();
+      } catch (err) {
+        msg.textContent = '❌ ' + err.message; msg.className = 'msg show err';
+      } finally {
+        btn.disabled = false; btn.textContent = 'Simpan Penerimaan';
+      }
+    });
+  } catch (err) {
+    pageContent.innerHTML = `<div class="card"><div class="msg show err">Gagal: ${err.message}</div></div>`;
   }
 }
