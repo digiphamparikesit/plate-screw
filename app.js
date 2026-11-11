@@ -58,8 +58,8 @@ const tabMap = {
   masterbarang: { title: 'Master Barang', render: renderMasterPanel },
   parlevel: { title: 'Par Level', render: renderParLevelPanel },
   masuk: { title: 'Barang Masuk', render: renderMasukPanel },
-  mutasi: { title: 'Mutasi', render: () => pageContent.innerHTML = '<div class="card">Fitur Mutasi segera hadir.</div>' },
-  keluar: { title: 'Pengeluaran', render: () => pageContent.innerHTML = '<div class="card">Fitur Pengeluaran segera hadir.</div>' },
+  mutasi: { title: 'Mutasi', render: renderMutasiPanel },
+  keluar: { title: 'Pengeluaran', render: renderKeluarPanel },
   penyesuaian: { title: 'Penyesuaian', render: () => pageContent.innerHTML = '<div class="card">Fitur Penyesuaian segera hadir.</div>' },
   approval: { title: 'Approval', render: () => pageContent.innerHTML = '<div class="card">Fitur Approval segera hadir.</div>' },
   notifikasi: { title: 'Konsinyasi', render: () => pageContent.innerHTML = '<div class="card">Fitur Notifikasi segera hadir.</div>' },
@@ -310,6 +310,161 @@ async function renderMasukPanel() {
         msg.textContent = '❌ ' + err.message; msg.className = 'msg show err';
       } finally {
         btn.disabled = false; btn.textContent = 'Simpan Penerimaan';
+      }
+    });
+  } catch (err) {
+    pageContent.innerHTML = `<div class="card"><div class="msg show err">Gagal: ${err.message}</div></div>`;
+  }
+}
+
+// ============================================================
+// 7. PANEL MUTASI (Dari Farmasi ke IBS)
+// ============================================================
+async function renderMutasiPanel() {
+  try {
+    const master = await selectView('master_barang', { eq: { aktif: true }, order: { column: 'nama_barang' } });
+    const gudang = await selectView('gudang');
+    const vendor = await selectView('vendor');
+    
+    let optBarang = master.map(m => `<option value="${m.kode_barang}">${m.kode_barang} - ${m.nama_barang}</option>`).join('');
+    let optGudang = gudang.map(g => `<option value="${g.id}">${g.nama} (${g.tipe})</option>`).join('');
+    let optVendor = vendor.map(v => `<option value="${v.id}">${v.nama}</option>`).join('');
+    
+    let gPusat = gudang.find(g => g.tipe === 'pusat')?.id || '';
+    let gUnit = gudang.find(g => g.tipe === 'unit')?.id || '';
+
+    pageContent.innerHTML = `
+      <div class="card">
+        <h3>Mutasi Barang</h3>
+        <div class="sub">Pindahkan stok dari Gudang Farmasi ke Ruang Farmasi IBS.</div>
+        <form id="form-mutasi">
+          <div class="field-grid">
+            <div class="field"><label>Tanggal *</label><input type="date" name="tanggal" id="mutasi-tgl" required></div>
+            <div class="field"><label>Pilih Barang *</label><select name="kode_barang" required><option value="">- Pilih -</option>${optBarang}</select></div>
+            <div class="field"><label>Jumlah *</label><input type="number" name="jumlah" min="1" required></div>
+            <div class="field"><label>Dari Gudang *</label><select name="dari_gudang" required>${optGudang}</select></div>
+            <div class="field"><label>Ke Gudang *</label><select name="ke_gudang" required>${optGudang}</select></div>
+            <div class="field">
+              <label>Status Kepemilikan *</label>
+              <select name="status" required>
+                <option value="milik_rs">Milik RS</option>
+                <option value="konsinyasi">Konsinyasi</option>
+              </select>
+            </div>
+            <div class="field"><label>Vendor (Konsinyasi)</label><select name="vendor_id"><option value="">- Tanpa Vendor -</option>${optVendor}</select></div>
+          </div>
+          <button class="btn" type="submit" style="margin-top:16px;" id="btn-mutasi">Proses Mutasi</button>
+          <div class="msg" id="msg-mutasi"></div>
+        </form>
+      </div>
+    `;
+
+    document.getElementById('mutasi-tgl').value = todayISO();
+    const f = document.getElementById('form-mutasi');
+    if (gPusat) f.dari_gudang.value = gPusat;
+    if (gUnit) f.ke_gudang.value = gUnit;
+
+    f.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById('btn-mutasi'); btn.disabled = true; btn.textContent = 'Memproses...';
+      const msg = document.getElementById('msg-mutasi'); msg.className = 'msg';
+
+      try {
+        await callRpc('rpc_mutasi', {
+          p_tanggal: f.tanggal.value, p_kode_barang: f.kode_barang.value,
+          p_jumlah: Number(f.jumlah.value), p_dari_gudang: f.dari_gudang.value,
+          p_ke_gudang: f.ke_gudang.value, p_status: f.status.value,
+          p_vendor_id: f.vendor_id.value || null, p_no_batch: '-', p_keterangan: null
+        });
+        msg.textContent = '✅ Mutasi berhasil diproses. Stok di IBS bertambah.'; msg.className = 'msg show ok';
+        f.reset(); document.getElementById('mutasi-tgl').value = todayISO();
+        if (gPusat) f.dari_gudang.value = gPusat; if (gUnit) f.ke_gudang.value = gUnit;
+      } catch (err) {
+        msg.textContent = '❌ ' + err.message; msg.className = 'msg show err';
+      } finally {
+        btn.disabled = false; btn.textContent = 'Proses Mutasi';
+      }
+    });
+  } catch (err) {
+    pageContent.innerHTML = `<div class="card"><div class="msg show err">Gagal: ${err.message}</div></div>`;
+  }
+}
+
+// ============================================================
+// 8. PANEL PENGELUARAN (Untuk Pasien)
+// ============================================================
+async function renderKeluarPanel() {
+  try {
+    const stokIBS = await selectView('v_stok_saat_ini', { order: { column: 'nama_barang' } });
+    const gudangUnit = await selectView('gudang', { eq: { tipe: 'unit' } });
+    const gudangIBS = gudangUnit.length > 0 ? gudangUnit[0].id : null;
+    
+    // Filter hanya stok yang ada di gudang IBS
+    const stokTersedia = stokIBS.filter(s => s.gudang_id === gudangIBS);
+
+    let optStok = stokTersedia.map(s => `
+      <option value="${s.barang_id}|${s.batch_id}|${s.kode_barang}">
+        ${s.nama_barang} (Tersedia: ${s.jumlah} - Batch: ${s.no_batch})
+      </option>
+    `).join('');
+
+    pageContent.innerHTML = `
+      <div class="card">
+        <h3>Pengeluaran Barang (Pasien)</h3>
+        <div class="sub">Catat pemakaian Plate/Screw untuk tindakan operasi.</div>
+        <form id="form-keluar">
+          <div class="field-grid">
+            <div class="field"><label>Tanggal Pakai *</label><input type="date" name="tanggal" id="keluar-tgl" required></div>
+            <div class="field full">
+              <label>Pilih Batch Barang (IBS) *</label>
+              <select name="batch_info" required>
+                <option value="">- Pilih Barang & Batch -</option>
+                ${optStok}
+              </select>
+            </div>
+            <div class="field"><label>Jumlah Dipakai *</label><input type="number" name="jumlah" min="1" required></div>
+            
+            <div class="field full" style="border-top:1px dashed var(--border); padding-top:14px; margin-top:8px;">
+              <label style="font-weight:700;color:var(--primary);">Data Pasien</label>
+            </div>
+            <div class="field"><label>Nama Pasien *</label><input type="text" name="nama_pasien" required placeholder="Budi Santoso"></div>
+            <div class="field"><label>No. Rekam Medik *</label><input type="text" name="no_rm" required placeholder="123456"></div>
+            <div class="field full"><label>Tujuan / Prosedur *</label><input type="text" name="tujuan" required placeholder="ORIF Femur, dll."></div>
+          </div>
+          <button class="btn" type="submit" style="margin-top:16px;" id="btn-keluar">Simpan Pengeluaran</button>
+          <div class="msg" id="msg-keluar"></div>
+        </form>
+      </div>
+    `;
+
+    document.getElementById('keluar-tgl').value = todayISO();
+
+    document.getElementById('form-keluar').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById('btn-keluar'); btn.disabled = true; btn.textContent = 'Memproses...';
+      const msg = document.getElementById('msg-keluar'); msg.className = 'msg';
+      const form = e.target;
+      const batchInfo = form.batch_info.value.split('|'); // [barang_id, batch_id, kode_barang]
+
+      if (batchInfo.length < 3) {
+        msg.textContent = '❌ Pilih barang yang valid.'; msg.className = 'msg show err';
+        btn.disabled = false; btn.textContent = 'Simpan Pengeluaran';
+        return;
+      }
+
+      try {
+        await callRpc('rpc_pengeluaran', {
+          p_tanggal: form.tanggal.value, p_kode_barang: batchInfo[2],
+          p_batch_id: batchInfo[1], p_jumlah: Number(form.jumlah.value),
+          p_nama_pasien: form.nama_pasien.value.trim(), p_no_rm: form.no_rm.value.trim(),
+          p_tujuan: form.tujuan.value.trim()
+        });
+        msg.textContent = '✅ Pengeluaran berhasil dicatat.'; msg.className = 'msg show ok';
+        form.reset(); document.getElementById('keluar-tgl').value = todayISO();
+        setTimeout(() => renderKeluarPanel(), 1500);
+      } catch (err) {
+        msg.textContent = '❌ ' + err.message; msg.className = 'msg show err';
+        btn.disabled = false; btn.textContent = 'Simpan Pengeluaran';
       }
     });
   } catch (err) {
