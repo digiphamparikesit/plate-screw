@@ -1306,17 +1306,18 @@ async function renderKartuStokPanel() {
 }
 
 // ============================================================
-// 13. PANEL PENYESUAIAN STOK (REVISI: Riwayat, Edit, Hapus)
+// 13. PANEL PENYESUAIAN STOK (REVISI: +Status, +Vendor, +Batch)
 // ============================================================
 async function renderPenyesuaianPanel() {
   try {
     const gudang = await selectView('gudang');
     const master = await selectView('master_barang', { eq: { aktif: true }, order: { column: 'nama_barang' } });
+    const vendor = await selectView('vendor', { order: { column: 'nama' } });
     
     let optGudang = gudang.map(g => `<option value="${g.id}">${g.nama}</option>`).join('');
     let optBarang = master.map(m => `<option value="${m.kode_barang}">${m.kode_barang} - ${m.nama_barang}</option>`).join('');
+    let optVendor = vendor.map(v => `<option value="${v.id}">${v.nama}</option>`).join('');
 
-    // Ambil riwayat penyesuaian
     const riwayat = await selectView('v_kartu_stok', { eq: { jenis: 'penyesuaian' }, order: { column: 'created_at', ascending: false }, limit: 50 });
 
     pageContent.innerHTML = `
@@ -1328,13 +1329,30 @@ async function renderPenyesuaianPanel() {
             <div class="field"><label>Pilih Barang *</label><select name="kode_barang" required><option value="">- Pilih -</option>${optBarang}</select></div>
             <div class="field"><label>Gudang *</label><select name="gudang_id" required>${optGudang}</select></div>
             <div class="field">
-              <label>Jenis Penyesuaian *</label>
+              <label>Jenis *</label>
               <select name="jenis" required>
                 <option value="tambah">Tambah (Fisik > Sistem)</option>
                 <option value="kurang">Kurang (Fisik < Sistem / Rusak)</option>
               </select>
             </div>
             <div class="field"><label>Jumlah *</label><input type="number" name="jumlah" min="1" required></div>
+            
+            <div class="field">
+              <label>Status Kepemilikan *</label>
+              <select name="status" id="pny-status" required>
+                <option value="milik_rs">Milik RS</option>
+                <option value="konsinyasi">Konsinyasi</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>Vendor *</label>
+              <select name="vendor_id" id="pny-vendor" required>
+                <option value="">- Pilih Vendor -</option>
+                ${optVendor}
+              </select>
+            </div>
+            <div class="field"><label>No. Batch *</label><input type="text" name="no_batch" placeholder="-" required></div>
+            
             <div class="field full"><label>Alasan *</label><input type="text" name="alasan" required placeholder="Contoh: Barang rusak / Selisih opname"></div>
           </div>
           <button class="btn" type="submit" style="margin-top:16px;" id="btn-pny">Simpan Penyesuaian</button>
@@ -1345,7 +1363,7 @@ async function renderPenyesuaianPanel() {
       <div class="card">
         <h3>Riwayat Penyesuaian (50 Terakhir)</h3>
         <div class="table-wrap"><table>
-          <thead><tr><th>Tanggal</th><th>Barang</th><th>Gudang</th><th>Jenis</th><th class="num">Jumlah</th><th>Alasan</th><th>Aksi</th></tr></thead><tbody>
+          <thead><tr><th>Tanggal</th><th>Barang</th><th>Gudang</th><th>Status/Vendor</th><th>Jenis</th><th class="num">Jumlah</th><th>Aksi</th></tr></thead><tbody>
           ${riwayat.length === 0 ? '<tr><td colspan="7" class="empty">Belum ada riwayat penyesuaian.</td></tr>' : ''}
           ${riwayat.map(r => {
             const isTambah = r.qty > 0;
@@ -1353,9 +1371,12 @@ async function renderPenyesuaianPanel() {
               <td>${new Date(r.tanggal).toLocaleDateString('id-ID')}</td>
               <td>${escapeHtml(r.nama_barang)}</td>
               <td>${r.dari_gudang || r.ke_gudang || '-'}</td>
+              <td>
+                ${r.status_kepemilikan === 'konsinyasi' ? '<span class="badge warn">Konsinyasi</span>' : 'Milik RS'}<br>
+                <small>${escapeHtml(r.vendor || '-')}</small>
+              </td>
               <td style="color:${isTambah ? 'var(--success)' : 'var(--danger)'}; font-weight:600;">${isTambah ? 'Tambah' : 'Kurang'}</td>
               <td class="num">${angka(Math.abs(r.qty))}</td>
-              <td>${escapeHtml(r.alasan || '-')}</td>
               <td>
                 <button class="btn secondary btn-edit-pny" 
                   data-id="${r.id}" 
@@ -1363,6 +1384,9 @@ async function renderPenyesuaianPanel() {
                   data-jenis="${isTambah ? 'tambah' : 'kurang'}" 
                   data-jml="${Math.abs(r.qty)}" 
                   data-alasan="${r.alasan || ''}"
+                  data-status="${r.status_kepemilikan}"
+                  data-vendor="${r.vendor_id || ''}"
+                  data-batch="${r.no_batch || '-'}"
                   style="padding:4px 10px;font-size:11px;margin-right:4px;">Edit</button>
                 <button class="btn secondary btn-hapus-pny" data-id="${r.id}" style="padding:4px 10px;font-size:11px;background:#fbeae8;color:var(--danger);">Hapus</button>
               </td>
@@ -1379,14 +1403,24 @@ async function renderPenyesuaianPanel() {
             <input type="hidden" name="id">
             <div class="field-grid" style="grid-template-columns: 1fr 1fr;">
               <div class="field full"><label>Tanggal *</label><input type="date" name="tanggal" required></div>
+              <div class="field"><label>Jenis *</label><select name="jenis" required><option value="tambah">Tambah</option><option value="kurang">Kurang</option></select></div>
+              <div class="field"><label>Jumlah *</label><input type="number" name="jumlah" min="1" required></div>
+              
               <div class="field">
-                <label>Jenis *</label>
-                <select name="jenis" required>
-                  <option value="tambah">Tambah (Fisik > Sistem)</option>
-                  <option value="kurang">Kurang (Fisik < Sistem)</option>
+                <label>Status *</label>
+                <select name="status" required>
+                  <option value="milik_rs">Milik RS</option>
+                  <option value="konsinyasi">Konsinyasi</option>
                 </select>
               </div>
-              <div class="field"><label>Jumlah *</label><input type="number" name="jumlah" min="1" required></div>
+              <div class="field">
+                <label>Vendor *</label>
+                <select name="vendor_id" required>
+                  <option value="">- Pilih Vendor -</option>
+                  ${optVendor}
+                </select>
+              </div>
+              <div class="field full"><label>No. Batch *</label><input type="text" name="no_batch" required></div>
               <div class="field full"><label>Alasan *</label><input type="text" name="alasan" required></div>
             </div>
             <div style="margin-top:20px; display:flex; gap:10px; justify-content:flex-end;">
@@ -1413,7 +1447,7 @@ async function renderPenyesuaianPanel() {
           p_tanggal: form.tanggal.value, p_kode_barang: form.kode_barang.value,
           p_gudang_id: form.gudang_id.value, p_jenis: form.jenis.value,
           p_jumlah: Number(form.jumlah.value), p_alasan: form.alasan.value.trim(),
-          p_status: 'milik_rs', p_vendor_id: null, p_no_batch: '-'
+          p_status: form.status.value, p_vendor_id: form.vendor_id.value || null, p_no_batch: form.no_batch.value
         });
         msg.textContent = '✅ Penyesuaian berhasil disimpan.'; msg.className = 'msg show ok';
         setTimeout(() => renderPenyesuaianPanel(), 1000);
@@ -1445,6 +1479,9 @@ async function renderPenyesuaianPanel() {
         form.jenis.value = this.dataset.jenis;
         form.jumlah.value = this.dataset.jml;
         form.alasan.value = this.dataset.alasan;
+        form.status.value = this.dataset.status;
+        form.vendor_id.value = this.dataset.vendor;
+        form.no_batch.value = this.dataset.batch;
         modal.style.display = 'flex';
       });
     });
@@ -1464,7 +1501,10 @@ async function renderPenyesuaianPanel() {
           p_tanggal: form.tanggal.value,
           p_jenis: form.jenis.value,
           p_jumlah: Number(form.jumlah.value),
-          p_alasan: form.alasan.value.trim()
+          p_alasan: form.alasan.value.trim(),
+          p_status: form.status.value,
+          p_vendor_id: form.vendor_id.value || null,
+          p_no_batch: form.no_batch.value
         });
         msg.textContent = '✅ Berhasil diupdate.'; msg.className = 'msg show ok';
         setTimeout(() => { modal.style.display = 'none'; renderPenyesuaianPanel(); }, 1000);
