@@ -62,10 +62,10 @@ const tabMap = {
   keluar: { title: 'Pengeluaran', render: renderKeluarPanel },
   penyesuaian: { title: 'Penyesuaian', render: () => pageContent.innerHTML = '<div class="card">Fitur Penyesuaian segera hadir.</div>' },
   approval: { title: 'Approval', render: () => pageContent.innerHTML = '<div class="card">Fitur Approval segera hadir.</div>' },
-  notifikasi: { title: 'Konsinyasi', render: () => pageContent.innerHTML = '<div class="card">Fitur Notifikasi segera hadir.</div>' },
+  notifikasi: { title: 'Konsinyasi', render: renderNotifikasiPanel },
   opname: { title: 'Laporan Opname', render: () => pageContent.innerHTML = '<div class="card">Fitur Laporan Opname segera hadir.</div>' },
-  pemakaian: { title: 'Lap. Pemakaian', render: () => pageContent.innerHTML = '<div class="card">Fitur Laporan Pemakaian segera hadir.</div>' },
-  kartustok: { title: 'Kartu Stok', render: () => pageContent.innerHTML = '<div class="card">Fitur Kartu Stok segera hadir.</div>' }
+  pemakaian: { title: 'Lap. Pemakaian', render: renderPemakaianPanel },
+  kartustok: { title: 'Kartu Stok', render: renderKartuStokPanel },
 };
 
 menuItems.forEach(item => item.addEventListener('click', () => navigateTo(item.dataset.tab)));
@@ -465,6 +465,258 @@ async function renderKeluarPanel() {
       } catch (err) {
         msg.textContent = '❌ ' + err.message; msg.className = 'msg show err';
         btn.disabled = false; btn.textContent = 'Simpan Pengeluaran';
+      }
+    });
+  } catch (err) {
+    pageContent.innerHTML = `<div class="card"><div class="msg show err">Gagal: ${err.message}</div></div>`;
+  }
+}
+
+// ============================================================
+// 9. FITUR BADGE MERAH (NOTIFIKASI KONSINYASI)
+// ============================================================
+// Fungsi untuk mengecek notifikasi secara otomatis di latar belakang
+async function cekBadgeNotifikasi() {
+  try {
+    const notif = await selectView('v_notifikasi_konsinyasi_open');
+    const badge = document.getElementById('badge-notif');
+    if (notif.length > 0) {
+      badge.textContent = notif.length;
+      badge.classList.add('show');
+    } else {
+      badge.classList.remove('show');
+    }
+  } catch (err) {
+    console.error('Gagal cek notif:', err);
+  }
+}
+
+// Panggil pengecekan setiap 30 detik setelah login
+setInterval(() => {
+  if (currentUser) cekBadgeNotifikasi();
+}, 30000);
+
+// ============================================================
+// 10. PANEL NOTIFIKASI KONSINYASI
+// ============================================================
+async function renderNotifikasiPanel() {
+  try {
+    const notif = await selectView('v_notifikasi_konsinyasi_open');
+    
+    let html = `<div class="card">
+      <h3>🔔 Notifikasi Re-order Konsinyasi</h3>
+      <div class="sub">Daftar barang titipan (konsinyasi) yang stoknya menipis dan perlu di-reorder ke distributor.</div>`;
+
+    if (notif.length === 0) {
+      html += `<div class="empty">Tidak ada notifikasi. Semua stok konsinyasi aman.</div>`;
+    } else {
+      html += `<div class="table-wrap"><table>
+        <thead><tr><th>Tanggal</th><th>Barang</th><th>Vendor</th><th>Gudang</th><th class="num">Par Level</th><th class="num">Sisa Stok</th><th class="num">Perlu Re-order</th><th>Aksi</th></tr></thead><tbody>`;
+      
+      notif.forEach(n => {
+        html += `<tr>
+          <td>${new Date(n.created_at).toLocaleDateString('id-ID')}</td>
+          <td><strong>${escapeHtml(n.nama_barang)}</strong></td>
+          <td>${escapeHtml(n.vendor)}</td>
+          <td>${escapeHtml(n.gudang_stok)}</td>
+          <td class="num">${angka(n.par_level)}</td>
+          <td class="num">${angka(n.stok_saat_trigger)}</td>
+          <td class="num" style="color:var(--danger);font-weight:bold;">+${angka(n.perlu_reorder)}</td>
+          <td><button class="btn secondary btn-selesai" data-id="${n.id}">Tandai Selesai</button></td>
+        </tr>`;
+      });
+      html += `</tbody></table></div>`;
+    }
+    html += `</div>`;
+    pageContent.innerHTML = html;
+
+    // Event listener untuk tombol "Tandai Selesai"
+    document.querySelectorAll('.btn-selesai').forEach(btn => {
+      btn.addEventListener('click', async function() {
+        if(!confirm('Yakin barang sudah di-reorder / notifikasi selesai?')) return;
+        this.disabled = true; this.textContent = 'Memproses...';
+        try {
+          await callRpc('rpc_resolve_notifikasi', { p_id: this.dataset.id, p_status: 'selesai' });
+          renderNotifikasiPanel(); // refresh tabel
+          cekBadgeNotifikasi();    // refresh badge merah
+        } catch (err) {
+          alert(err.message);
+          this.disabled = false; this.textContent = 'Tandai Selesai';
+        }
+      });
+    });
+
+  } catch (err) {
+    pageContent.innerHTML = `<div class="card"><div class="msg show err">Gagal: ${err.message}</div></div>`;
+  }
+}
+
+// ============================================================
+// 11. PANEL LAPORAN PEMAKAIAN (Untuk SP Distributor)
+// ============================================================
+async function renderPemakaianPanel() {
+  try {
+    const vendor = await selectView('vendor');
+    let optVendor = vendor.map(v => `<option value="${v.nama}">${v.nama}</option>`).join('');
+
+    pageContent.innerHTML = `
+      <div class="card">
+        <h3>Laporan Pemakaian (Lampiran SP)</h3>
+        <div class="sub">Rekap pemakaian pasien untuk diserahkan ke distributor sebagai lampiran SP.</div>
+        <div class="field-grid" style="grid-template-columns: 1fr 1fr 1fr auto;">
+          <div class="field"><label>Dari Tanggal</label><input type="date" id="lap-mulai" required></div>
+          <div class="field"><label>Sampai Tanggal</label><input type="date" id="lap-akhir" required></div>
+          <div class="field">
+            <label>Vendor (Konsinyasi)</label>
+            <select id="lap-vendor"><option value="">Semua Vendor</option>${optVendor}</select>
+          </div>
+          <button class="btn" id="btn-lap-tampil" style="margin-top:20px;">Tampilkan</button>
+        </div>
+      </div>
+      <div id="lap-hasil"></div>
+    `;
+
+    document.getElementById('lap-mulai').value = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0,10);
+    document.getElementById('lap-akhir').value = todayISO();
+
+    document.getElementById('btn-lap-tampil').addEventListener('click', async () => {
+      const btn = document.getElementById('btn-lap-tampil');
+      const mulai = document.getElementById('lap-mulai').value;
+      const akhir = document.getElementById('lap-akhir').value;
+      const vnd = document.getElementById('lap-vendor').value;
+
+      if(!mulai || !akhir) return alert('Pilih tanggal mulai dan akhir.');
+      btn.disabled = true; btn.textContent = 'Memuat...';
+
+      try {
+        // Panggil VIEW v_laporan_pemakaian_sp (hanya nama barang, tanpa kode)
+        let q = sb.from('v_laporan_pemakaian_sp').select('*').gte('tanggal', mulai).lte('tanggal', akhir).eq('status_kepemilikan', 'konsinyasi');
+        if (vnd) q = q.eq('vendor', vnd);
+        
+        const { data, error } = await q.order('tanggal', { ascending: true });
+        if (error) throw new Error(error.message);
+
+        const container = document.getElementById('lap-hasil');
+        if (data.length === 0) {
+          container.innerHTML = '<div class="card"><div class="empty">Tidak ada pemakaian konsinyasi pada periode ini.</div></div>';
+          return;
+        }
+
+        let html = `<div class="card">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+            <h3 style="margin:0;">Data Pemakaian Periode ${mulai} s/d ${akhir}</h3>
+            <button class="btn secondary" id="btn-export-csv">⬇ Export CSV</button>
+          </div>
+          <div class="table-wrap"><table>
+            <thead><tr><th>No</th><th>Tanggal</th><th>Nama Pasien</th><th>No. RM</th><th>Nama Barang</th><th class="num">Jumlah</th><th>Tujuan</th></tr></thead><tbody>`;
+        
+        let totalQty = 0;
+        data.forEach((r, i) => {
+          totalQty += r.jumlah;
+          html += `<tr>
+            <td>${i + 1}</td>
+            <td>${new Date(r.tanggal).toLocaleDateString('id-ID')}</td>
+            <td>${escapeHtml(r.nama_pasien)}</td>
+            <td>${escapeHtml(r.no_rekam_medik)}</td>
+            <td>${escapeHtml(r.nama_barang)}</td>
+            <td class="num">${angka(r.jumlah)}</td>
+            <td>${escapeHtml(r.tujuan)}</td>
+          </tr>`;
+        });
+        html += `</tbody></table></div>
+          <div class="totals"><div><span class="l">Total Terpakai</span><span class="n">${angka(totalQty)}</span></div></div>
+        </div>`;
+        
+        container.innerHTML = html;
+
+        // Fitur Export CSV (Siap di-print sebagai Lampiran SP)
+        document.getElementById('btn-export-csv').addEventListener('click', () => {
+          let csvContent = "data:text/csv;charset=utf-8,";
+          csvContent += "Tanggal,Nama Pasien,No Rekam Medik,Nama Barang,Jumlah,Tujuan\n";
+          data.forEach(r => {
+            csvContent += `"${r.tanggal}","${r.nama_pasien}","${r.no_rekam_medik}","${r.nama_barang}",${r.jumlah},"${r.tujuan}"\n`;
+          });
+          const encodedUri = encodeURI(csvContent);
+          const link = document.createElement("a");
+          link.setAttribute("href", encodedUri);
+          link.setAttribute("download", `Lampiran_SP_${mulai}_sd_${akhir}.csv`);
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+        });
+
+      } catch (err) {
+        document.getElementById('lap-hasil').innerHTML = `<div class="card"><div class="msg show err">Gagal: ${err.message}</div></div>`;
+      } finally {
+        btn.disabled = false; btn.textContent = 'Tampilkan';
+      }
+    });
+  } catch (err) {
+    pageContent.innerHTML = `<div class="card"><div class="msg show err">Gagal: ${err.message}</div></div>`;
+  }
+}
+
+// ============================================================
+// 12. PANEL KARTU STOK (Riwayat Barang)
+// ============================================================
+async function renderKartuStokPanel() {
+  try {
+    const master = await selectView('master_barang', { eq: { aktif: true }, order: { column: 'nama_barang' } });
+    let optBarang = master.map(m => `<option value="${m.kode_barang}">${m.kode_barang} - ${m.nama_barang}</option>`).join('');
+
+    pageContent.innerHTML = `
+      <div class="card">
+        <h3>Kartu Stok Barang</h3>
+        <div class="sub">Lacak riwayat keluar-masuk barang secara detail (Buku Besar).</div>
+        <div class="field-grid" style="grid-template-columns: 1fr auto;">
+          <div class="field">
+            <label>Pilih Barang *</label>
+            <select id="kartu-barang" required><option value="">- Pilih Barang -</option>${optBarang}</select>
+          </div>
+          <button class="btn" id="btn-kartu-tampil" style="margin-top:20px;">Tampilkan Riwayat</button>
+        </div>
+      </div>
+      <div id="kartu-hasil"></div>
+    `;
+
+    document.getElementById('btn-kartu-tampil').addEventListener('click', async () => {
+      const kode = document.getElementById('kartu-barang').value;
+      if(!kode) return alert('Pilih barang terlebih dahulu.');
+      
+      const btn = document.getElementById('btn-kartu-tampil'); btn.disabled = true; btn.textContent = 'Memuat...';
+      const container = document.getElementById('kartu-hasil');
+      container.innerHTML = '<div class="card"><div class="empty">Mengambil data...</div></div>';
+
+      try {
+        const data = await selectView('v_kartu_stok', { eq: { kode_barang: kode }, order: { column: 'created_at', ascending: true } });
+
+        if (data.length === 0) {
+          container.innerHTML = '<div class="card"><div class="empty">Belum ada transaksi untuk barang ini.</div></div>';
+          return;
+        }
+
+        let html = `<div class="card"><h3>Riwayat: ${escapeHtml(data[0].nama_barang)}</h3>
+          <div class="table-wrap"><table>
+            <thead><tr><th>Tanggal</th><th>Jenis</th><th>Gudang (Dari/Ke)</th><th class="num">Masuk</th><th class="num">Keluar</th><th>Keterangan</th></tr></thead><tbody>`;
+        
+        data.forEach(r => {
+          const isMasuk = r.qty > 0;
+          html += `<tr>
+            <td>${new Date(r.tanggal).toLocaleDateString('id-ID')}</td>
+            <td><strong>${r.jenis.toUpperCase()}</strong></td>
+            <td>${r.dari_gudang ? 'Dari: ' + r.dari_gudang : ''} ${r.ke_gudang ? 'Ke: ' + r.ke_gudang : ''}</td>
+            <td class="num" style="color:var(--success);">${isMasuk ? '+' + angka(r.qty) : ''}</td>
+            <td class="num" style="color:var(--danger);">${!isMasuk ? angka(Math.abs(r.qty)) : ''}</td>
+            <td>${escapeHtml(r.nama_pasien || r.alasan || r.vendor || '-')}</td>
+          </tr>`;
+        });
+        html += `</tbody></table></div></div>`;
+        container.innerHTML = html;
+
+      } catch (err) {
+        container.innerHTML = `<div class="card"><div class="msg show err">Gagal: ${err.message}</div></div>`;
+      } finally {
+        btn.disabled = false; btn.textContent = 'Tampilkan Riwayat';
       }
     });
   } catch (err) {
