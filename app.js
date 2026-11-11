@@ -1231,7 +1231,7 @@ async function renderKartuStokPanel() {
 }
 
 // ============================================================
-// 13. PANEL PENYESUAIAN STOK
+// 13. PANEL PENYESUAIAN STOK (REVISI: Riwayat, Edit, Hapus)
 // ============================================================
 async function renderPenyesuaianPanel() {
   try {
@@ -1241,10 +1241,12 @@ async function renderPenyesuaianPanel() {
     let optGudang = gudang.map(g => `<option value="${g.id}">${g.nama}</option>`).join('');
     let optBarang = master.map(m => `<option value="${m.kode_barang}">${m.kode_barang} - ${m.nama_barang}</option>`).join('');
 
+    // Ambil riwayat penyesuaian
+    const riwayat = await selectView('v_kartu_stok', { eq: { jenis: 'penyesuaian' }, order: { column: 'created_at', ascending: false }, limit: 50 });
+
     pageContent.innerHTML = `
       <div class="card">
-        <h3>Catat Penyesuaian Stok (Koreksi)</h3>
-        <div class="sub">Gunakan form ini jika ada barang rusak, hilang, atau selisih saat opname.</div>
+        <h3>Catat Penyesuaian Stok</h3>
         <form id="form-penyesuaian">
           <div class="field-grid">
             <div class="field"><label>Tanggal *</label><input type="date" name="tanggal" id="pny-tgl" required></div>
@@ -1258,16 +1260,73 @@ async function renderPenyesuaianPanel() {
               </select>
             </div>
             <div class="field"><label>Jumlah *</label><input type="number" name="jumlah" min="1" required></div>
-            <div class="field full"><label>Alasan *</label><input type="text" name="alasan" required placeholder="Contoh: Barang rusak / Hasil opname bulan ini"></div>
+            <div class="field full"><label>Alasan *</label><input type="text" name="alasan" required placeholder="Contoh: Barang rusak / Selisih opname"></div>
           </div>
           <button class="btn" type="submit" style="margin-top:16px;" id="btn-pny">Simpan Penyesuaian</button>
           <div class="msg" id="msg-pny"></div>
         </form>
       </div>
+
+      <div class="card">
+        <h3>Riwayat Penyesuaian (50 Terakhir)</h3>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Tanggal</th><th>Barang</th><th>Gudang</th><th>Jenis</th><th class="num">Jumlah</th><th>Alasan</th><th>Aksi</th></tr></thead><tbody>
+          ${riwayat.length === 0 ? '<tr><td colspan="7" class="empty">Belum ada riwayat penyesuaian.</td></tr>' : ''}
+          ${riwayat.map(r => {
+            const isTambah = r.qty > 0;
+            return `<tr>
+              <td>${new Date(r.tanggal).toLocaleDateString('id-ID')}</td>
+              <td>${escapeHtml(r.nama_barang)}</td>
+              <td>${r.dari_gudang || r.ke_gudang || '-'}</td>
+              <td style="color:${isTambah ? 'var(--success)' : 'var(--danger)'}; font-weight:600;">${isTambah ? 'Tambah' : 'Kurang'}</td>
+              <td class="num">${angka(Math.abs(r.qty))}</td>
+              <td>${escapeHtml(r.alasan || '-')}</td>
+              <td>
+                <button class="btn secondary btn-edit-pny" 
+                  data-id="${r.id}" 
+                  data-tgl="${r.tanggal}" 
+                  data-jenis="${isTambah ? 'tambah' : 'kurang'}" 
+                  data-jml="${Math.abs(r.qty)}" 
+                  data-alasan="${r.alasan || ''}"
+                  style="padding:4px 10px;font-size:11px;margin-right:4px;">Edit</button>
+                <button class="btn secondary btn-hapus-pny" data-id="${r.id}" style="padding:4px 10px;font-size:11px;background:#fbeae8;color:var(--danger);">Hapus</button>
+              </td>
+            </tr>`;
+          }).join('')}
+        </tbody></table></div>
+      </div>
+
+      <!-- MODAL EDIT PENYESUAIAN -->
+      <div id="modal-edit-pny" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:9999; align-items:center; justify-content:center;">
+        <div style="background:#fff; padding:24px; border-radius:12px; width:100%; max-width:500px;">
+          <h3 style="margin-bottom:16px;">Edit Penyesuaian</h3>
+          <form id="form-edit-pny">
+            <input type="hidden" name="id">
+            <div class="field-grid" style="grid-template-columns: 1fr 1fr;">
+              <div class="field full"><label>Tanggal *</label><input type="date" name="tanggal" required></div>
+              <div class="field">
+                <label>Jenis *</label>
+                <select name="jenis" required>
+                  <option value="tambah">Tambah (Fisik > Sistem)</option>
+                  <option value="kurang">Kurang (Fisik < Sistem)</option>
+                </select>
+              </div>
+              <div class="field"><label>Jumlah *</label><input type="number" name="jumlah" min="1" required></div>
+              <div class="field full"><label>Alasan *</label><input type="text" name="alasan" required></div>
+            </div>
+            <div style="margin-top:20px; display:flex; gap:10px; justify-content:flex-end;">
+              <button type="button" class="btn secondary" id="btn-batal-edit-pny">Batal</button>
+              <button type="submit" class="btn" id="btn-submit-edit-pny">Simpan Perubahan</button>
+            </div>
+            <div class="msg" id="msg-edit-pny" style="margin-top:10px;"></div>
+          </form>
+        </div>
+      </div>
     `;
 
     document.getElementById('pny-tgl').value = todayISO();
 
+    // 1. Submit Baru
     document.getElementById('form-penyesuaian').addEventListener('submit', async (e) => {
       e.preventDefault();
       const btn = document.getElementById('btn-pny'); btn.disabled = true; btn.textContent = 'Menyimpan...';
@@ -1275,7 +1334,6 @@ async function renderPenyesuaianPanel() {
       const form = e.target;
 
       try {
-        // Karena Anda admin, kita gunakan RPC langsung (self-approve)
         await callRpc('rpc_penyesuaian_langsung', {
           p_tanggal: form.tanggal.value, p_kode_barang: form.kode_barang.value,
           p_gudang_id: form.gudang_id.value, p_jenis: form.jenis.value,
@@ -1283,13 +1341,64 @@ async function renderPenyesuaianPanel() {
           p_status: 'milik_rs', p_vendor_id: null, p_no_batch: '-'
         });
         msg.textContent = '✅ Penyesuaian berhasil disimpan.'; msg.className = 'msg show ok';
-        form.reset(); document.getElementById('pny-tgl').value = todayISO();
+        setTimeout(() => renderPenyesuaianPanel(), 1000);
       } catch (err) {
         msg.textContent = '❌ ' + err.message; msg.className = 'msg show err';
-      } finally {
         btn.disabled = false; btn.textContent = 'Simpan Penyesuaian';
       }
     });
+
+    // 2. Hapus
+    document.querySelectorAll('.btn-hapus-pny').forEach(btn => {
+      btn.addEventListener('click', async function() {
+        if (!confirm('Yakin hapus penyesuaian ini? Stok akan dikembalikan ke posisi semula.')) return;
+        this.disabled = true; this.textContent = '...';
+        try {
+          await callRpc('rpc_hapus_penyesuaian', { p_transaksi_id: this.dataset.id });
+          renderPenyesuaianPanel();
+        } catch (err) { alert(err.message); this.disabled = false; this.textContent = 'Hapus'; }
+      });
+    });
+
+    // 3. Buka Modal Edit
+    const modal = document.getElementById('modal-edit-pny');
+    document.querySelectorAll('.btn-edit-pny').forEach(btn => {
+      btn.addEventListener('click', function() {
+        const form = document.getElementById('form-edit-pny');
+        form.id.value = this.dataset.id;
+        form.tanggal.value = this.dataset.tgl;
+        form.jenis.value = this.dataset.jenis;
+        form.jumlah.value = this.dataset.jml;
+        form.alasan.value = this.dataset.alasan;
+        modal.style.display = 'flex';
+      });
+    });
+
+    document.getElementById('btn-batal-edit-pny').addEventListener('click', () => modal.style.display = 'none');
+
+    // 4. Submit Edit
+    document.getElementById('form-edit-pny').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById('btn-submit-edit-pny'); btn.disabled = true; btn.textContent = 'Menyimpan...';
+      const msg = document.getElementById('msg-edit-pny'); msg.className = 'msg';
+      const form = e.target;
+
+      try {
+        await callRpc('rpc_edit_penyesuaian', {
+          p_transaksi_id: form.id.value,
+          p_tanggal: form.tanggal.value,
+          p_jenis: form.jenis.value,
+          p_jumlah: Number(form.jumlah.value),
+          p_alasan: form.alasan.value.trim()
+        });
+        msg.textContent = '✅ Berhasil diupdate.'; msg.className = 'msg show ok';
+        setTimeout(() => { modal.style.display = 'none'; renderPenyesuaianPanel(); }, 1000);
+      } catch (err) {
+        msg.textContent = '❌ ' + err.message; msg.className = 'msg show err';
+        btn.disabled = false; btn.textContent = 'Simpan Perubahan';
+      }
+    });
+
   } catch (err) {
     pageContent.innerHTML = `<div class="card"><div class="msg show err">Gagal: ${err.message}</div></div>`;
   }
