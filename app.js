@@ -794,7 +794,7 @@ async function renderMutasiPanel() {
 }
 
 // ============================================================
-// 8. PANEL PENGELUARAN (REVISI: Riwayat, Edit, Hapus)
+// 8. PANEL PENGELUARAN (REVISI: Layout 2 Kolom, Riwayat, Edit, Hapus)
 // ============================================================
 async function renderKeluarPanel() {
   try {
@@ -818,24 +818,51 @@ async function renderKeluarPanel() {
       <div class="card">
         <h3>Pengeluaran Barang (Pasien)</h3>
         <form id="form-keluar">
-          <div class="field-grid">
-            <div class="field"><label>Tanggal Pakai *</label><input type="date" name="tanggal" id="keluar-tgl" required></div>
-            <div class="field full">
-              <label>Pilih Batch Barang (IBS) *</label>
-              <select name="batch_info" required>
-                <option value="">- Pilih Barang & Batch -</option>
-                ${optStok}
-              </select>
+          <!-- LAYOUT 2 KOLOM -->
+          <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 24px;">
+            
+            <!-- Kolom Kiri: Data Barang -->
+            <div>
+              <h4 style="font-size:14px; color:var(--primary); margin-bottom:12px; border-bottom:1px solid var(--border); padding-bottom:6px;">Data Barang</h4>
+              <div class="field" style="margin-bottom:12px;">
+                <label>Tanggal Pakai *</label>
+                <input type="date" name="tanggal" id="keluar-tgl" required>
+              </div>
+              <div class="field" style="margin-bottom:12px;">
+                <label>Pilih Batch Barang (IBS) *</label>
+                <select name="batch_info" required>
+                  <option value="">- Pilih Barang & Batch -</option>
+                  ${optStok}
+                </select>
+              </div>
+              <div class="field" style="margin-bottom:12px;">
+                <label>Jumlah Dipakai *</label>
+                <input type="number" name="jumlah" min="1" required>
+              </div>
             </div>
-            <div class="field"><label>Jumlah Dipakai *</label><input type="number" name="jumlah" min="1" required></div>
-            <div class="field full" style="border-top:1px dashed var(--border); padding-top:14px; margin-top:8px;">
-              <label style="font-weight:700;color:var(--primary);">Data Pasien</label>
+
+            <!-- Kolom Kanan: Data Pasien -->
+            <div>
+              <h4 style="font-size:14px; color:var(--primary); margin-bottom:12px; border-bottom:1px solid var(--border); padding-bottom:6px;">Data Pasien</h4>
+              <div class="field" style="margin-bottom:12px;">
+                <label>Nama Pasien *</label>
+                <input type="text" name="nama_pasien" required placeholder="Budi Santoso">
+              </div>
+              <div class="field" style="margin-bottom:12px;">
+                <label>No. Rekam Medik *</label>
+                <input type="text" name="no_rm" required placeholder="123456">
+              </div>
+              <div class="field" style="margin-bottom:12px;">
+                <label>Tujuan / Prosedur *</label>
+                <input type="text" name="tujuan" required placeholder="ORIF Femur, dll.">
+              </div>
             </div>
-            <div class="field"><label>Nama Pasien *</label><input type="text" name="nama_pasien" required placeholder="Budi Santoso"></div>
-            <div class="field"><label>No. Rekam Medik *</label><input type="text" name="no_rm" required placeholder="123456"></div>
-            <div class="field full"><label>Tujuan / Prosedur *</label><input type="text" name="tujuan" required placeholder="ORIF Femur, dll."></div>
+
           </div>
-          <button class="btn" type="submit" style="margin-top:16px;" id="btn-keluar">Simpan Pengeluaran</button>
+          
+          <div style="margin-top:16px; border-top:1px dashed var(--border); padding-top:16px;">
+            <button class="btn" type="submit" id="btn-keluar">Simpan Pengeluaran</button>
+          </div>
           <div class="msg" id="msg-keluar"></div>
         </form>
       </div>
@@ -865,20 +892,23 @@ async function renderKeluarPanel() {
         </tbody></table></div>
       </div>
 
-      <!-- MODAL EDIT PENGELUARAN -->
+      <!-- MODAL EDIT PENGELUARAN (JUGA 2 KOLOM) -->
       <div id="modal-edit-keluar" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:9999; align-items:center; justify-content:center;">
-        <div style="background:#fff; padding:24px; border-radius:12px; width:100%; max-width:500px;">
+        <div style="background:#fff; padding:24px; border-radius:12px; width:100%; max-width:600px;">
           <h3 style="margin-bottom:16px;">Edit Pengeluaran</h3>
           <form id="form-edit-keluar">
             <input type="hidden" name="id">
-            <div class="field-grid" style="grid-template-columns: 1fr 1fr;">
-              <div class="field full"><label>Tanggal *</label><input type="date" name="tanggal" required></div>
-              <div class="field full"><label>Jumlah Dipakai *</label><input type="number" name="jumlah" min="1" required></div>
-              <div class="field full" style="border-top:1px dashed var(--border); padding-top:14px;"><label style="font-weight:700;color:var(--primary);">Data Pasien</label></div>
-              <div class="field full"><label>Nama Pasien *</label><input type="text" name="nama_pasien" required></div>
-              <div class="field full"><label>No. Rekam Medik *</label><input type="text" name="no_rm" required></div>
-              <div class="field full"><label>Tujuan *</label><input type="text" name="tujuan" required></div>
+            
+            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:16px;">
+              <div class="field" style="grid-column: 1 / -1;"><label>Tanggal *</label><input type="date" name="tanggal" required></div>
+              <div class="field" style="grid-column: 1 / -1;"><label>Jumlah Dipakai *</label><input type="number" name="jumlah" min="1" required></div>
+              
+              <div style="grid-column: 1 / -1; border-top:1px dashed var(--border); padding-top:14px;"><label style="font-weight:700;color:var(--primary);">Data Pasien</label></div>
+              <div class="field"><label>Nama Pasien *</label><input type="text" name="nama_pasien" required></div>
+              <div class="field"><label>No. Rekam Medik *</label><input type="text" name="no_rm" required></div>
+              <div class="field" style="grid-column: 1 / -1;"><label>Tujuan *</label><input type="text" name="tujuan" required></div>
             </div>
+
             <div style="margin-top:20px; display:flex; gap:10px; justify-content:flex-end;">
               <button type="button" class="btn secondary" id="btn-batal-edit-keluar">Batal</button>
               <button type="submit" class="btn" id="btn-submit-edit-keluar">Simpan Perubahan</button>
