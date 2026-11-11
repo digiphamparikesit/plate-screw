@@ -63,7 +63,7 @@ const tabMap = {
   penyesuaian: { title: 'Penyesuaian', render: renderPenyesuaianPanel },
   approval: { title: 'Approval', render: renderApprovalPanel },
   notifikasi: { title: 'Konsinyasi', render: renderNotifikasiPanel },
-  opname: { title: 'Laporan Opname', render: () => pageContent.innerHTML = '<div class="card">Fitur Laporan Opname segera hadir.</div>' },
+  opname: { title: 'Laporan Opname', render: renderOpnamePanel },
   pemakaian: { title: 'Lap. Pemakaian', render: renderPemakaianPanel },
   kartustok: { title: 'Kartu Stok', render: renderKartuStokPanel },
 };
@@ -850,5 +850,110 @@ async function renderApprovalPanel() {
 
   } catch (err) {
     pageContent.innerHTML = `<div class="card"><div class="msg show err">Gagal: ${err.message}</div></div>`;
+  }
+}
+
+// ============================================================
+// 15. PANEL LAPORAN OPNAME (Posisi Stok Akhir)
+// ============================================================
+async function renderOpnamePanel() {
+  try {
+    // Ambil data view stok saat ini
+    const stok = await selectView('v_stok_saat_ini', { order: { column: 'nama_barang', ascending: true } });
+    const gudang = await selectView('gudang');
+
+    // Hitung ringkasan per gudang
+    let ringkasan = {};
+    gudang.forEach(g => { ringkasan[g.id] = { nama: g.nama, item: 0, nilai: 0 }; });
+    
+    let grandTotalItem = 0;
+    let grandTotalNilai = 0;
+
+    stok.forEach(r => {
+      if (ringkasan[r.gudang_id]) {
+        ringkasan[r.gudang_id].item += 1;
+        ringkasan[r.gudang_id].nilai += Number(r.jumlah_harga);
+      }
+      grandTotalItem += 1;
+      grandTotalNilai += Number(r.jumlah_harga);
+    });
+
+    let html = `<div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <div>
+          <h3>Laporan Stok Opname</h3>
+          <div class="sub">Rekapitulasi posisi stok akhir per tanggal hari ini (${new Date().toLocaleDateString('id-ID')}).</div>
+        </div>
+        <button class="btn secondary" id="btn-export-opname">⬇ Export CSV</button>
+      </div>
+      
+      <!-- Kartu Ringkasan -->
+      <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:16px;margin-bottom:24px;">
+        ${Object.values(ringkasan).map(r => `
+          <div style="background:#e4f0ee;padding:12px 20px;border-radius:8px;flex:1;min-width:200px;">
+            <strong style="color:var(--primary);font-size:14px;">${escapeHtml(r.nama)}</strong><br>
+            <span style="font-size:12px;color:var(--text-muted);">${r.item} jenis barang</span><br>
+            <span style="font-size:18px;font-weight:600;color:var(--primary);">${rupiah(r.nilai)}</span>
+          </div>
+        `).join('')}
+      </div>
+
+      <!-- Tabel Detail -->
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Kode</th>
+              <th>Nama Barang</th>
+              <th>Gudang</th>
+              <th>Status</th>
+              <th class="num">Sisa Stok</th>
+              <th class="num">Harga Satuan</th>
+              <th class="num">Total Nilai</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${stok.length === 0 ? '<tr><td colspan="7" class="empty">Belum ada stok.</td></tr>' : ''}
+            ${stok.map(r => `
+              <tr>
+                <td><strong>${escapeHtml(r.kode_barang)}</strong></td>
+                <td>${escapeHtml(r.nama_barang)}</td>
+                <td>${escapeHtml(r.gudang)}</td>
+                <td>${r.status_kepemilikan === 'konsinyasi' ? '<span class="badge warn">Konsinyasi</span>' : 'Milik RS'}</td>
+                <td class="num">${angka(r.jumlah)}</td>
+                <td class="num">${rupiah(r.harga)}</td>
+                <td class="num">${rupiah(r.jumlah_harga)}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="totals" style="border-top:2px solid var(--primary);padding-top:16px;margin-top:16px;">
+        <div><span class="l">Total Item</span><span class="n">${angka(grandTotalItem)}</span></div>
+        <div><span class="l">Total Nilai Aset</span><span class="n">${rupiah(grandTotalNilai)}</span></div>
+      </div>
+    </div>`;
+
+    pageContent.innerHTML = html;
+
+    // Fitur Export CSV Opname
+    document.getElementById('btn-export-opname').addEventListener('click', () => {
+      let csvContent = "data:text/csv;charset=utf-8,";
+      csvContent += "Kode Barang,Nama Barang,Gudang,Status,Sisa Stok,Harga Satuan,Total Nilai\n";
+      stok.forEach(r => {
+        csvContent += `"${r.kode_barang}","${r.nama_barang}","${r.gudang}","${r.status_kepemilikan}",${r.jumlah},${r.harga},${r.jumlah_harga}\n`;
+      });
+      const encodedUri = encodeURI(csvContent);
+      const link = document.createElement("a");
+      link.setAttribute("href", encodedUri);
+      link.setAttribute("download", `Laporan_Opname_${todayISO()}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    });
+
+  } catch (err) {
+    pageContent.innerHTML = `<div class="card"><div class="msg show err">Gagal memuat opname: ${err.message}</div></div>`;
   }
 }
