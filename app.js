@@ -353,7 +353,7 @@ async function renderParLevelPanel() {
 }
 
 // ============================================================
-// 6. PANEL BARANG MASUK
+// 6. PANEL BARANG MASUK (REVISI: +Riwayat, Edit, Hapus)
 // ============================================================
 async function renderMasukPanel() {
   try {
@@ -362,6 +362,9 @@ async function renderMasukPanel() {
     
     let optBarang = master.map(m => `<option value="${m.kode_barang}">${m.kode_barang} - ${m.nama_barang}</option>`).join('');
     let optVendor = vendor.map(v => `<option value="${v.nama}">${v.nama}</option>`).join('');
+
+    // Ambil riwayat barang masuk (jenis='masuk')
+    const riwayat = await selectView('v_kartu_stok', { eq: { jenis: 'masuk' }, order: { column: 'created_at', ascending: false }, limit: 50 });
 
     pageContent.innerHTML = `
       <div class="card">
@@ -380,10 +383,30 @@ async function renderMasukPanel() {
           <div class="msg" id="msg-masuk"></div>
         </form>
       </div>
+
+      <div class="card">
+        <h3>Riwayat Barang Masuk (50 Transaksi Terakhir)</h3>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Tanggal</th><th>Nama Barang</th><th class="num">Jumlah</th><th class="num">Harga</th><th>Vendor</th><th>Aksi</th></tr></thead><tbody>
+          ${riwayat.length === 0 ? '<tr><td colspan="6" class="empty">Belum ada riwayat barang masuk.</td></tr>' : ''}
+          ${riwayat.map(r => `<tr>
+            <td>${new Date(r.tanggal).toLocaleDateString('id-ID')}</td>
+            <td>${escapeHtml(r.nama_barang)}</td>
+            <td class="num">${angka(r.qty)}</td>
+            <td class="num">${rupiah(r.harga_satuan || 0)}</td>
+            <td>${escapeHtml(r.vendor || '-')}</td>
+            <td>
+              <button class="btn secondary btn-edit-masuk" data-id="${r.id}" data-jml="${r.qty}" data-hrg="${r.harga_satuan}" data-tgl="${r.tanggal}" style="padding:4px 10px;font-size:11px;margin-right:4px;">Edit</button>
+              <button class="btn secondary btn-hapus-masuk" data-id="${r.id}" style="padding:4px 10px;font-size:11px;background:#fbeae8;color:var(--danger);">Hapus</button>
+            </td>
+          </tr>`).join('')}
+        </tbody></table></div>
+      </div>
     `;
 
     document.getElementById('masuk-tgl').value = todayISO();
 
+    // 1. Submit Form
     document.getElementById('form-masuk').addEventListener('submit', async (e) => {
       e.preventDefault();
       const btn = document.getElementById('btn-masuk'); btn.disabled = true; btn.textContent = 'Menyimpan...';
@@ -397,14 +420,49 @@ async function renderMasukPanel() {
           p_vendor: form.vendor.value.trim() || null, p_no_batch: form.no_batch.value.trim() || '-',
           p_keterangan: null
         });
-        msg.textContent = '✅ Barang masuk berhasil dicatat ke Gudang Farmasi.'; msg.className = 'msg show ok';
-        form.reset(); document.getElementById('masuk-tgl').value = todayISO();
+        msg.textContent = '✅ Barang masuk berhasil dicatat.'; msg.className = 'msg show ok';
+        setTimeout(() => renderMasukPanel(), 1000); // Refresh tabel
       } catch (err) {
         msg.textContent = '❌ ' + err.message; msg.className = 'msg show err';
-      } finally {
         btn.disabled = false; btn.textContent = 'Simpan Penerimaan';
       }
     });
+
+    // 2. Fitur Hapus
+    document.querySelectorAll('.btn-hapus-masuk').forEach(btn => {
+      btn.addEventListener('click', async function() {
+        if (!confirm('Yakin ingin menghapus transaksi ini? Stok akan dikembalikan (dikurangi).')) return;
+        this.disabled = true; this.textContent = '...';
+        try {
+          await callRpc('rpc_hapus_transaksi', { p_transaksi_id: this.dataset.id });
+          renderMasukPanel();
+        } catch (err) { alert(err.message); this.disabled = false; this.textContent = 'Hapus'; }
+      });
+    });
+
+    // 3. Fitur Edit
+    document.querySelectorAll('.btn-edit-masuk').forEach(btn => {
+      btn.addEventListener('click', async function() {
+        const tgl = prompt("Edit Tanggal (YYYY-MM-DD):", this.dataset.tgl);
+        if (!tgl) return;
+        const jml = prompt("Edit Jumlah:", this.dataset.jml);
+        if (!jml || isNaN(jml)) return;
+        const hrg = prompt("Edit Harga Satuan:", this.dataset.hrg);
+        if (!hrg || isNaN(hrg)) return;
+
+        this.disabled = true; this.textContent = '...';
+        try {
+          await callRpc('rpc_edit_barang_masuk', { 
+            p_transaksi_id: this.dataset.id, 
+            p_tanggal: tgl, 
+            p_jumlah: Number(jml), 
+            p_harga: Number(hrg) 
+          });
+          renderMasukPanel();
+        } catch (err) { alert(err.message); this.disabled = false; this.textContent = 'Edit'; }
+      });
+    });
+
   } catch (err) {
     pageContent.innerHTML = `<div class="card"><div class="msg show err">Gagal: ${err.message}</div></div>`;
   }
