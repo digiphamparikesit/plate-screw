@@ -109,47 +109,83 @@ async function renderStokPanel() {
 }
 
 // ============================================================
-// 4. PANEL MASTER BARANG
+// 4. PANEL MASTER BARANG (REVISI: +Status, +Import CSV)
 // ============================================================
 async function renderMasterPanel() {
   try {
     const kategori = await selectView('kategori_barang');
     const master = await selectView('master_barang', { order: { column: 'kode_barang' } });
+    const vendor = await selectView('vendor');
     masterBarangCache = master;
 
     let optKategori = kategori.map(k => `<option value="${k.prefix}">${k.nama} (${k.prefix})</option>`).join('');
+    let optVendor = vendor.map(v => `<option value="${v.id}">${v.nama}</option>`).join('');
 
     pageContent.innerHTML = `
       <div class="card">
         <h3>Tambah Barang Baru</h3>
-        <div class="sub">Pilih kategori, sistem akan membuat kode otomatis.</div>
         <form id="form-master">
           <div class="field-grid">
             <div class="field"><label>Kategori *</label><select name="prefix" required><option value="">- Pilih -</option>${optKategori}</select></div>
             <div class="field"><label>Nama Barang *</label><input type="text" name="nama_barang" required placeholder="Plate Reconstruction 4.5mm"></div>
             <div class="field"><label>Satuan *</label><input type="text" name="satuan" value="pcs" required></div>
             <div class="field"><label>Harga Terakhir (Rp) *</label><input type="number" name="harga_terakhir" min="0" required value="0"></div>
+            <div class="field">
+              <label>Status Kepemilikan *</label>
+              <select name="status_kepemilikan" id="master-status" required>
+                <option value="milik_rs">Milik RS</option>
+                <option value="konsinyasi">Konsinyasi</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>Vendor (Khusus Konsinyasi)</label>
+              <select name="vendor_id" id="master-vendor" disabled>
+                <option value="">- Tanpa Vendor -</option>${optVendor}
+              </select>
+            </div>
           </div>
           <button class="btn" type="submit" style="margin-top:16px;" id="btn-simpan-master">Simpan Barang</button>
           <div class="msg" id="msg-master"></div>
         </form>
       </div>
+
+      <div class="card" style="border: 2px dashed var(--primary-light); background: #f8fbfa;">
+        <h3>📤 Import Barang (Copy-Paste dari Excel)</h3>
+        <div class="sub">Format kolom: <strong>Kategori (PL/SC/XX), Nama Barang, Satuan, Harga, Status (milik_rs/konsinyasi)</strong></div>
+        <textarea id="excel-paste" rows="5" style="width:100%; padding:10px; font-family:monospace; border:1px solid var(--border); border-radius:6px; margin-bottom:12px;" placeholder="PL&#9;Plate Mini 2.0mm&#9;pcs&#9;250000&#9;milik_rs&#10;SC&#9;Screw 2.0mm&#9;pcs&#9;45000&#9;konsinyasi"></textarea>
+        <button class="btn" id="btn-import-excel">Proses Import</button>
+        <div class="msg" id="msg-excel"></div>
+      </div>
+
       <div class="card">
         <h3>Daftar Barang</h3>
         <div class="table-wrap"><table>
-          <thead><tr><th>Kode</th><th>Nama Barang</th><th>Kategori</th><th>Satuan</th><th class="num">Harga</th></tr></thead><tbody>
-          ${master.length === 0 ? '<tr><td colspan="5" class="empty">Belum ada data.</td></tr>' : ''}
-          ${master.map(b => `<tr>
-            <td><strong>${escapeHtml(b.kode_barang)}</strong></td>
-            <td>${escapeHtml(b.nama_barang)}</td>
-            <td>${escapeHtml(b.prefix)}</td>
-            <td>${escapeHtml(b.satuan)}</td>
-            <td class="num">${rupiah(b.harga_terakhir)}</td>
-          </tr>`).join('')}
+          <thead><tr><th>Kode</th><th>Nama Barang</th><th>Kategori</th><th>Status</th><th>Vendor</th><th class="num">Harga</th></tr></thead><tbody>
+          ${master.length === 0 ? '<tr><td colspan="6" class="empty">Belum ada data.</td></tr>' : ''}
+          ${master.map(b => {
+            const vnd = vendor.find(v => v.id === b.vendor_id);
+            return `<tr>
+              <td><strong>${escapeHtml(b.kode_barang)}</strong></td>
+              <td>${escapeHtml(b.nama_barang)}</td>
+              <td>${escapeHtml(b.prefix)}</td>
+              <td>${b.status_kepemilikan === 'konsinyasi' ? '<span class="badge warn">Konsinyasi</span>' : 'Milik RS'}</td>
+              <td>${vnd ? escapeHtml(vnd.nama) : '-'}</td>
+              <td class="num">${rupiah(b.harga_terakhir)}</td>
+            </tr>`;
+          }).join('')}
         </tbody></table></div>
       </div>
     `;
 
+    // Logika Dropdown Vendor di Form Manual
+    const selStatus = document.getElementById('master-status');
+    const selVendor = document.getElementById('master-vendor');
+    selStatus.addEventListener('change', (e) => {
+      if (e.target.value === 'milik_rs') { selVendor.value = ''; selVendor.disabled = true; } 
+      else { selVendor.disabled = false; }
+    });
+
+    // Submit Form Manual
     document.getElementById('form-master').addEventListener('submit', async (e) => {
       e.preventDefault();
       const btn = document.getElementById('btn-simpan-master'); btn.disabled = true; btn.textContent = 'Menyimpan...';
@@ -160,16 +196,73 @@ async function renderMasterPanel() {
         const { error } = await sb.from('master_barang').insert({
           kode_barang: kodeBaru, prefix: form.prefix.value,
           nama_barang: form.nama_barang.value.trim(), satuan: form.satuan.value.trim(),
-          harga_terakhir: Number(form.harga_terakhir.value)
+          harga_terakhir: Number(form.harga_terakhir.value),
+          status_kepemilikan: form.status_kepemilikan.value,
+          vendor_id: form.vendor_id.value || null
         });
         if (error) throw new Error(error.message);
         msg.textContent = `✅ Berhasil! Kode: ${kodeBaru}`; msg.className = 'msg show ok';
-        setTimeout(() => renderMasterPanel(), 1500);
+        setTimeout(() => renderMasterPanel(), 1000);
       } catch (err) {
         msg.textContent = '❌ ' + err.message; msg.className = 'msg show err';
         btn.disabled = false; btn.textContent = 'Simpan Barang';
       }
     });
+
+    // Submit Fitur Import Excel
+    document.getElementById('btn-import-excel').addEventListener('click', async () => {
+      const raw = document.getElementById('excel-paste').value.trim();
+      if (!raw) return alert('Tempelkan data Excel terlebih dahulu.');
+      
+      const btn = document.getElementById('btn-import-excel'); btn.disabled = true; btn.textContent = 'Memproses...';
+      const msg = document.getElementById('msg-excel'); msg.className = 'msg';
+      
+      // Pisahkan berdasarkan baris baru
+      const rows = raw.split('\n');
+      let success = 0; let failed = 0;
+
+      for (let i = 0; i < rows.length; i++) {
+        const row = rows[i].trim();
+        if (!row) continue;
+
+        // Excel memisahkan kolom dengan Tab (\t)
+        const cols = row.split('\t');
+        if (cols.length < 4) { failed++; continue; }
+
+        const prefix = cols[0].trim().toUpperCase();
+        const nama = cols[1].trim();
+        const satuan = cols[2].trim() || 'pcs';
+        const harga = Number(cols[3].trim()) || 0;
+        const status = (cols[4] ? cols[4].trim().toLowerCase() : 'milik_rs') === 'konsinyasi' ? 'konsinyasi' : 'milik_rs';
+
+        try {
+          // Generate Kode otomatis
+          const kodeBaru = await callRpc('rpc_generate_kode', { p_prefix: prefix });
+          
+          // Insert ke database
+          const { error } = await sb.from('master_barang').insert({
+            kode_barang: kodeBaru, prefix: prefix, nama_barang: nama, satuan: satuan,
+            harga_terakhir: harga, status_kepemilikan: status, vendor_id: null
+          });
+          
+          if (error) throw new Error();
+          success++;
+        } catch (err) {
+          failed++;
+        }
+      }
+
+      msg.textContent = `✅ ${success} berhasil di-import. ❌ ${failed} gagal.`;
+      msg.className = `msg show ${failed === 0 ? 'ok' : 'warn'}`;
+      
+      if (success > 0) {
+        document.getElementById('excel-paste').value = '';
+        setTimeout(() => renderMasterPanel(), 2000);
+      }
+      
+      btn.disabled = false; btn.textContent = 'Proses Import';
+    });
+
   } catch (err) {
     pageContent.innerHTML = `<div class="card"><div class="msg show err">Gagal: ${err.message}</div></div>`;
   }
