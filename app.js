@@ -1088,7 +1088,7 @@ async function renderNotifikasiPanel() {
 }
 
 // ============================================================
-// 11. PANEL LAPORAN PEMAKAIAN (Untuk SP Distributor)
+// 11. PANEL LAPORAN PEMAKAIAN (REVISI: Fix Tanggal & Pencarian)
 // ============================================================
 async function renderPemakaianPanel() {
   try {
@@ -1100,8 +1100,14 @@ async function renderPemakaianPanel() {
         <h3>Laporan Pemakaian (Lampiran SP)</h3>
         <div class="sub">Rekap pemakaian pasien untuk diserahkan ke distributor sebagai lampiran SP.</div>
         <div class="field-grid" style="grid-template-columns: 1fr 1fr 1fr auto;">
-          <div class="field"><label>Dari Tanggal</label><input type="date" id="lap-mulai" required></div>
-          <div class="field"><label>Sampai Tanggal</label><input type="date" id="lap-akhir" required></div>
+          <div class="field">
+            <label>Dari Tanggal</label>
+            <input type="date" id="lap-mulai">
+          </div>
+          <div class="field">
+            <label>Sampai Tanggal</label>
+            <input type="date" id="lap-akhir">
+          </div>
           <div class="field">
             <label>Vendor (Konsinyasi)</label>
             <select id="lap-vendor"><option value="">Semua Vendor</option>${optVendor}</select>
@@ -1112,6 +1118,7 @@ async function renderPemakaianPanel() {
       <div id="lap-hasil"></div>
     `;
 
+    // Set default ke tanggal 1 bulan ini s/d hari ini
     document.getElementById('lap-mulai').value = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0,10);
     document.getElementById('lap-akhir').value = todayISO();
 
@@ -1121,12 +1128,15 @@ async function renderPemakaianPanel() {
       const akhir = document.getElementById('lap-akhir').value;
       const vnd = document.getElementById('lap-vendor').value;
 
-      if(!mulai || !akhir) return alert('Pilih tanggal mulai dan akhir.');
       btn.disabled = true; btn.textContent = 'Memuat...';
 
       try {
-        // Panggil VIEW v_laporan_pemakaian_sp (hanya nama barang, tanpa kode)
-        let q = sb.from('v_laporan_pemakaian_sp').select('*').gte('tanggal', mulai).lte('tanggal', akhir).eq('status_kepemilikan', 'konsinyasi');
+        // 1. Ambil data dasar
+        let q = sb.from('v_laporan_pemakaian_sp').select('*').eq('status_kepemilikan', 'konsinyasi');
+        
+        // 2. Terapkan filter hanya jika tanggal diisi
+        if (mulai) q = q.gte('tanggal', mulai);
+        if (akhir) q = q.lte('tanggal', akhir);
         if (vnd) q = q.eq('vendor', vnd);
         
         const { data, error } = await q.order('tanggal', { ascending: true });
@@ -1140,7 +1150,7 @@ async function renderPemakaianPanel() {
 
         let html = `<div class="card">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-            <h3 style="margin:0;">Data Pemakaian Periode ${mulai} s/d ${akhir}</h3>
+            <h3 style="margin:0;">Data Pemakaian Periode ${mulai || 'Awal'} s/d ${akhir || 'Akhir'}</h3>
             <button class="btn secondary" id="btn-export-csv">⬇ Export CSV</button>
           </div>
           <div class="table-wrap"><table>
@@ -1149,9 +1159,11 @@ async function renderPemakaianPanel() {
         let totalQty = 0;
         data.forEach((r, i) => {
           totalQty += r.jumlah;
+          // Format tanggal dari database (YYYY-MM-DD) ke format Indonesia (DD/MM/YYYY)
+          const tglIndo = new Date(r.tanggal).toLocaleDateString('id-ID');
           html += `<tr>
             <td>${i + 1}</td>
-            <td>${new Date(r.tanggal).toLocaleDateString('id-ID')}</td>
+            <td>${tglIndo}</td>
             <td>${escapeHtml(r.nama_pasien)}</td>
             <td>${escapeHtml(r.no_rekam_medik)}</td>
             <td>${escapeHtml(r.nama_barang)}</td>
@@ -1165,17 +1177,18 @@ async function renderPemakaianPanel() {
         
         container.innerHTML = html;
 
-        // Fitur Export CSV (Siap di-print sebagai Lampiran SP)
+        // Fitur Export CSV
         document.getElementById('btn-export-csv').addEventListener('click', () => {
           let csvContent = "data:text/csv;charset=utf-8,";
           csvContent += "Tanggal,Nama Pasien,No Rekam Medik,Nama Barang,Jumlah,Tujuan\n";
           data.forEach(r => {
-            csvContent += `"${r.tanggal}","${r.nama_pasien}","${r.no_rekam_medik}","${r.nama_barang}",${r.jumlah},"${r.tujuan}"\n`;
+            const tglIndo = new Date(r.tanggal).toLocaleDateString('id-ID');
+            csvContent += `"${tglIndo}","${r.nama_pasien}","${r.no_rekam_medik}","${r.nama_barang}",${r.jumlah},"${r.tujuan}"\n`;
           });
           const encodedUri = encodeURI(csvContent);
           const link = document.createElement("a");
           link.setAttribute("href", encodedUri);
-          link.setAttribute("download", `Lampiran_SP_${mulai}_sd_${akhir}.csv`);
+          link.setAttribute("download", `Lampiran_SP_${mulai || 'All'}_sd_${akhir || 'All'}.csv`);
           document.body.appendChild(link);
           link.click();
           document.body.removeChild(link);
