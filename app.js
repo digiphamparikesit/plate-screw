@@ -89,30 +89,93 @@ function navigateTo(tab) {
 }
 
 // ============================================================
-// 3. PANEL STOK SAAT INI
+// 3. PANEL STOK SAAT INI (REVISI: Grouping Total & Detail Gudang)
 // ============================================================
 async function renderStokPanel() {
   try {
     const stok = await selectView('v_stok_saat_ini', { order: { column: 'nama_barang' } });
+    
     if (stok.length === 0) {
       pageContent.innerHTML = '<div class="card"><div class="empty">Belum ada stok di gudang.</div></div>';
       return;
     }
-    let html = `<div class="card"><h3>Stok Plate & Screw</h3><div class="table-wrap"><table>
-      <thead><tr><th>Kode</th><th>Nama Barang</th><th>Gudang</th><th>Status</th><th class="num">Jumlah</th></tr></thead><tbody>`;
+
+    // 1. Olah data untuk mengelompokkan berdasarkan Kode Barang & Status
+    const grouped = {};
     stok.forEach(r => {
+      const key = `${r.kode_barang}|${r.status_kepemilikan}|${r.vendor || ''}`;
+      if (!grouped[key]) {
+        grouped[key] = {
+          kode_barang: r.kode_barang,
+          nama_barang: r.nama_barang,
+          status_kepemilikan: r.status_kepemilikan,
+          vendor: r.vendor,
+          total_qty: 0,
+          rincian_gudang: []
+        };
+      }
+      grouped[key].total_qty += r.jumlah;
+      grouped[key].rincian_gudang.push({
+        nama_gudang: r.gudang,
+        qty: r.jumlah
+      });
+    });
+
+    // 2. Render Tabel
+    let html = `<div class="card">
+      <h3>Stok Plate & Screw (Ringkasan Total)</h3>
+      <div class="sub">Klik pada angka jumlah untuk melihat rincian asal gudang.</div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Kode</th><th>Nama Barang</th><th>Status</th><th>Vendor</th><th class="num">Total Stok (Klik)</th></tr></thead><tbody>`;
+    
+    Object.values(grouped).forEach((g, i) => {
+      // Buat ID unik untuk baris ini
+      const rowId = `detail-${i}`;
+      
+      // Render baris utama (Total)
       html += `<tr>
-        <td><strong>${escapeHtml(r.kode_barang)}</strong></td>
-        <td>${escapeHtml(r.nama_barang)}</td>
-        <td>${escapeHtml(r.gudang)}</td>
-        <td>${r.status_kepemilikan === 'konsinyasi' ? '<span class="badge warn">Konsinyasi</span>' : 'Milik RS'}</td>
-        <td class="num">${angka(r.jumlah)}</td>
+        <td><strong>${escapeHtml(g.kode_barang)}</strong></td>
+        <td>${escapeHtml(g.nama_barang)}</td>
+        <td>${g.status_kepemilikan === 'konsinyasi' ? '<span class="badge warn">Konsinyasi</span>' : 'Milik RS'}</td>
+        <td>${escapeHtml(g.vendor || '-')}</td>
+        <td class="num">
+          <button class="btn-detail" data-target="${rowId}" style="background:none; border:none; color:var(--primary); font-weight:bold; font-size:15px; cursor:pointer; text-decoration:underline;">
+            ${angka(g.total_qty)}
+          </button>
+        </td>
+      </tr>`;
+
+      // Render baris detail (Tersembunyi di awal)
+      html += `<tr id="${rowId}" style="display:none; background:#f8fbfa;">
+        <td colspan="5" style="padding:10px 20px; border-bottom:2px solid var(--border);">
+          <div style="font-size:12px; color:var(--text-muted); margin-bottom:6px;"><strong>Rincian Lokasi Stok:</strong></div>
+          <ul style="margin:0; padding-left:20px; font-size:13px;">
+            ${g.rincian_gudang.map(rg => `<li>${escapeHtml(rg.nama_gudang)}: <strong>${angka(rg.qty)}</strong></li>`).join('')}
+          </ul>
+        </td>
       </tr>`;
     });
+
     html += `</tbody></table></div></div>`;
     pageContent.innerHTML = html;
+
+    // 3. Logika Toggle (Buka/Tutup Rincian)
+    document.querySelectorAll('.btn-detail').forEach(btn => {
+      btn.addEventListener('click', function() {
+        const targetId = this.dataset.target;
+        const detailRow = document.getElementById(targetId);
+        if (detailRow.style.display === 'none') {
+          detailRow.style.display = 'table-row';
+          this.style.color = 'var(--danger)'; // Beri warna beda saat terbuka
+        } else {
+          detailRow.style.display = 'none';
+          this.style.color = 'var(--primary)';
+        }
+      });
+    });
+
   } catch (err) {
-    pageContent.innerHTML = `<div class="card"><div class="msg show err">Gagal: ${err.message}</div></div>`;
+    pageContent.innerHTML = `<div class="card"><div class="msg show err">Gagal memuat stok: ${err.message}</div></div>`;
   }
 }
 
