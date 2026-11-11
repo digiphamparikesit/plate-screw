@@ -89,7 +89,7 @@ function navigateTo(tab) {
 }
 
 // ============================================================
-// 3. PANEL STOK SAAT INI (REVISI: Grouping Total & Detail Gudang)
+// 3. PANEL STOK SAAT INI (REVISI: Klik Nama Barang untuk Detail)
 // ============================================================
 async function renderStokPanel() {
   try {
@@ -124,25 +124,24 @@ async function renderStokPanel() {
     // 2. Render Tabel
     let html = `<div class="card">
       <h3>Stok Plate & Screw (Ringkasan Total)</h3>
-      <div class="sub">Klik pada angka jumlah untuk melihat rincian asal gudang.</div>
+      <div class="sub">Klik pada <strong>Nama Barang</strong> untuk melihat rincian asal gudang.</div>
       <div class="table-wrap"><table>
-        <thead><tr><th>Kode</th><th>Nama Barang</th><th>Status</th><th>Vendor</th><th class="num">Total Stok (Klik)</th></tr></thead><tbody>`;
+        <thead><tr><th>Kode</th><th>Nama Barang (Klik)</th><th>Status</th><th>Vendor</th><th class="num">Total Stok</th></tr></thead><tbody>`;
     
     Object.values(grouped).forEach((g, i) => {
-      // Buat ID unik untuk baris ini
       const rowId = `detail-${i}`;
       
-      // Render baris utama (Total)
+      // Render baris utama (Nama Barang bisa diklik)
       html += `<tr>
         <td><strong>${escapeHtml(g.kode_barang)}</strong></td>
-        <td>${escapeHtml(g.nama_barang)}</td>
-        <td>${g.status_kepemilikan === 'konsinyasi' ? '<span class="badge warn">Konsinyasi</span>' : 'Milik RS'}</td>
-        <td>${escapeHtml(g.vendor || '-')}</td>
-        <td class="num">
-          <button class="btn-detail" data-target="${rowId}" style="background:none; border:none; color:var(--primary); font-weight:bold; font-size:15px; cursor:pointer; text-decoration:underline;">
-            ${angka(g.total_qty)}
+        <td>
+          <button class="btn-detail" data-target="${rowId}" style="background:none; border:none; color:var(--primary); font-weight:600; font-size:13px; cursor:pointer; text-align:left; padding:0;">
+            ${escapeHtml(g.nama_barang)}
           </button>
         </td>
+        <td>${g.status_kepemilikan === 'konsinyasi' ? '<span class="badge warn">Konsinyasi</span>' : 'Milik RS'}</td>
+        <td>${escapeHtml(g.vendor || '-')}</td>
+        <td class="num" style="font-weight:bold;">${angka(g.total_qty)}</td>
       </tr>`;
 
       // Render baris detail (Tersembunyi di awal)
