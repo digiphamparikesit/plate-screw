@@ -454,7 +454,7 @@ async function renderParLevelPanel() {
 }
 
 // ============================================================
-// 6. PANEL BARANG MASUK (REVISI: Edit Lengkap + Riwayat)
+// 6. PANEL BARANG MASUK (REVISI: +Status Kepemilikan & Vendor)
 // ============================================================
 async function renderMasukPanel() {
   try {
@@ -463,19 +463,33 @@ async function renderMasukPanel() {
     const riwayat = await selectView('v_kartu_stok', { eq: { jenis: 'masuk' }, order: { column: 'created_at', ascending: false }, limit: 50 });
     
     let optBarang = master.map(m => `<option value="${m.kode_barang}">${m.kode_barang} - ${m.nama_barang}</option>`).join('');
-    let optVendor = vendor.map(v => `<option value="${v.nama}">${v.nama}</option>`).join('');
+    let optVendor = vendor.map(v => `<option value="${v.id}">${v.nama}</option>`).join('');
 
     pageContent.innerHTML = `
-      <!-- Form Input Baru -->
       <div class="card">
         <h3>Penerimaan Barang Masuk</h3>
+        <div class="sub">Catat barang yang datang dari distributor ke Gudang Farmasi.</div>
         <form id="form-masuk">
           <div class="field-grid">
             <div class="field"><label>Tanggal *</label><input type="date" name="tanggal" id="masuk-tgl" required></div>
             <div class="field"><label>Pilih Barang *</label><select name="kode_barang" required><option value="">- Pilih -</option>${optBarang}</select></div>
             <div class="field"><label>Jumlah *</label><input type="number" name="jumlah" min="1" required></div>
             <div class="field"><label>Harga Satuan (Rp) *</label><input type="number" name="harga" min="0" required></div>
-            <div class="field"><label>Vendor</label><input type="text" name="vendor" list="list-vendor" placeholder="Nama PT..."><datalist id="list-vendor">${optVendor}</datalist></div>
+            
+            <div class="field">
+              <label>Status Kepemilikan *</label>
+              <select name="status" id="masuk-status" required>
+                <option value="milik_rs">Milik RS</option>
+                <option value="konsinyasi">Konsinyasi</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>Pilih Vendor *</label>
+              <select name="vendor_id" id="masuk-vendor" required>
+                <option value="">- Pilih Vendor -</option>
+                ${optVendor}
+              </select>
+            </div>
             <div class="field"><label>No. Batch</label><input type="text" name="no_batch" placeholder="-"></div>
           </div>
           <button class="btn" type="submit" style="margin-top:16px;" id="btn-masuk">Simpan Penerimaan</button>
@@ -483,15 +497,15 @@ async function renderMasukPanel() {
         </form>
       </div>
 
-      <!-- Tabel Riwayat -->
       <div class="card">
         <h3>Riwayat Barang Masuk (50 Terakhir)</h3>
         <div class="table-wrap"><table>
-          <thead><tr><th>Tanggal</th><th>Barang</th><th class="num">Jumlah</th><th class="num">Harga</th><th>Vendor</th><th>Aksi</th></tr></thead><tbody>
-          ${riwayat.length === 0 ? '<tr><td colspan="6" class="empty">Belum ada riwayat.</td></tr>' : ''}
+          <thead><tr><th>Tanggal</th><th>Nama Barang</th><th>Status</th><th class="num">Jumlah</th><th class="num">Harga</th><th>Vendor</th><th>Aksi</th></tr></thead><tbody>
+          ${riwayat.length === 0 ? '<tr><td colspan="7" class="empty">Belum ada riwayat barang masuk.</td></tr>' : ''}
           ${riwayat.map(r => `<tr>
             <td>${new Date(r.tanggal).toLocaleDateString('id-ID')}</td>
             <td>${escapeHtml(r.nama_barang)}</td>
+            <td>${r.status_kepemilikan === 'konsinyasi' ? '<span class="badge warn">Konsinyasi</span>' : 'Milik RS'}</td>
             <td class="num">${angka(r.qty)}</td>
             <td class="num">${rupiah(r.harga_satuan || 0)}</td>
             <td>${escapeHtml(r.vendor || '-')}</td>
@@ -511,18 +525,18 @@ async function renderMasukPanel() {
         </tbody></table></div>
       </div>
 
-      <!-- MODAL EDIT (Tersembunyi) -->
+      <!-- MODAL EDIT (Tetap menggunakan RPC edit yang lama) -->
       <div id="modal-edit-masuk" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:9999; align-items:center; justify-content:center;">
         <div style="background:#fff; padding:24px; border-radius:12px; width:100%; max-width:500px;">
           <h3 style="margin-bottom:16px;">Edit Transaksi Masuk</h3>
           <form id="form-edit-masuk">
             <input type="hidden" name="id">
             <div class="field-grid" style="grid-template-columns: 1fr 1fr;">
-              <div class="field"><label>Tanggal *</label><input type="date" name="tanggal" required></div>
-              <div class="field"><label>Barang *</label><select name="kode_barang" required><option value="">- Pilih -</option>${optBarang}</select></div>
+              <div class="field full"><label>Tanggal *</label><input type="date" name="tanggal" required></div>
+              <div class="field full"><label>Barang *</label><select name="kode_barang" required><option value="">- Pilih -</option>${optBarang}</select></div>
               <div class="field"><label>Jumlah *</label><input type="number" name="jumlah" min="1" required></div>
               <div class="field"><label>Harga *</label><input type="number" name="harga" min="0" required></div>
-              <div class="field full"><label>Vendor</label><input type="text" name="vendor" list="list-vendor"></div>
+              <div class="field full"><label>Vendor *</label><input type="text" name="vendor" list="list-vendor"><datalist id="list-vendor">${optVendor}</datalist></div>
               <div class="field full"><label>No. Batch</label><input type="text" name="no_batch"></div>
             </div>
             <div style="margin-top:20px; display:flex; gap:10px; justify-content:flex-end;">
@@ -543,14 +557,24 @@ async function renderMasukPanel() {
       const btn = document.getElementById('btn-masuk'); btn.disabled = true; btn.textContent = 'Menyimpan...';
       const msg = document.getElementById('msg-masuk'); msg.className = 'msg';
       const form = e.target;
+
+      if (!form.vendor_id.value) {
+         msg.textContent = '❌ Harap pilih vendor.'; msg.className = 'msg show err';
+         btn.disabled = false; btn.textContent = 'Simpan Penerimaan'; return;
+      }
+
       try {
         await callRpc('rpc_barang_masuk', {
-          p_tanggal: form.tanggal.value, p_kode_barang: form.kode_barang.value,
-          p_jumlah: Number(form.jumlah.value), p_harga: Number(form.harga.value),
-          p_vendor: form.vendor.value.trim() || null, p_no_batch: form.no_batch.value.trim() || '-',
+          p_tanggal: form.tanggal.value, 
+          p_kode_barang: form.kode_barang.value,
+          p_jumlah: Number(form.jumlah.value), 
+          p_harga: Number(form.harga.value),
+          p_status_kepemilikan: form.status.value, // Tambahan
+          p_vendor_id: form.vendor_id.value,       // Tambahan
+          p_no_batch: form.no_batch.value.trim() || '-',
           p_keterangan: null
         });
-        msg.textContent = '✅ Berhasil dicatat.'; msg.className = 'msg show ok';
+        msg.textContent = '✅ Barang masuk berhasil dicatat.'; msg.className = 'msg show ok';
         setTimeout(() => renderMasukPanel(), 1000);
       } catch (err) {
         msg.textContent = '❌ ' + err.message; msg.className = 'msg show err';
@@ -561,7 +585,7 @@ async function renderMasukPanel() {
     // 2. Hapus
     document.querySelectorAll('.btn-hapus-masuk').forEach(btn => {
       btn.addEventListener('click', async function() {
-        if (!confirm('Yakin hapus? Stok akan dikurangi otomatis.')) return;
+        if (!confirm('Yakin ingin menghapus transaksi ini? Stok akan dikurangi otomatis.')) return;
         this.disabled = true; this.textContent = '...';
         try {
           await callRpc('rpc_hapus_transaksi', { p_transaksi_id: this.dataset.id });
