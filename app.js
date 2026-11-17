@@ -552,26 +552,40 @@ async function renderParLevelPanel() {
 }
 
 // ============================================================
-// 6. PANEL BARANG MASUK (REVISI: +Kolom Batch & Status)
+// 6. PANEL BARANG MASUK (Revisi: Search Barang & Auto-Fill)
 // ============================================================
 async function renderMasukPanel() {
   try {
     const master = await selectView('master_barang', { eq: { aktif: true }, order: { column: 'nama_barang' } });
     const vendor = await selectView('vendor', { order: { column: 'nama' } });
-    const riwayat = await selectView('v_kartu_stok', { eq: { jenis: 'masuk' }, order: { column: 'created_at', ascending: false }, limit: 50 });
+    const riwayat = await selectView('v_kartu_stok', { eq: { jenis: 'masuk' }, order: { column: 'created_at', ascending: false }, limit: 20 });
     
-    let optBarang = master.map(m => `<option value="${m.kode_barang}">${m.kode_barang} - ${m.nama_barang}</option>`).join('');
+    // Simpan data master ke cache
+    window.masterBarangCache = master; 
+    
+    // Buat daftar untuk <datalist>
+    let optBarangSearch = master.map(m => `<option value="${m.kode_barang} - ${m.nama_barang}">`).join('');
     let optVendor = vendor.map(v => `<option value="${v.id}">${v.nama}</option>`).join('');
 
     pageContent.innerHTML = `
       <div class="card">
         <h3>Penerimaan Barang Masuk</h3>
+        <div class="sub">Ketik Kode atau Nama Barang untuk mencari.</div>
         <form id="form-masuk">
           <div class="field-grid">
             <div class="field"><label>Tanggal *</label><input type="date" name="tanggal" id="masuk-tgl" required></div>
-            <div class="field"><label>Pilih Barang *</label><select name="kode_barang" required><option value="">- Pilih -</option>${optBarang}</select></div>
-            <div class="field"><label>Jumlah *</label><input type="number" name="jumlah" min="1" required></div>
-            <div class="field"><label>Harga Satuan (Rp) *</label><input type="number" name="harga" min="0" required></div>
+            
+            <div class="field full">
+              <label>Cari Barang (Ketik Kode / Nama) *</label>
+              <input type="text" id="masuk-cari-barang" list="list-barang" placeholder="Contoh: 2657 atau PLATE" required autocomplete="off">
+              <datalist id="list-barang">
+                ${optBarangSearch}
+              </datalist>
+              <input type="hidden" name="kode_barang" id="masuk-kode-barang">
+            </div>
+            
+            <div class="field"><label>Jumlah Diterima *</label><input type="number" name="jumlah" min="1" required></div>
+            <div class="field"><label>HPP (Rp) *</label><input type="number" name="harga" id="masuk-hpp" min="0" required></div>
             
             <div class="field">
               <label>Status Kepemilikan *</label>
@@ -581,9 +595,9 @@ async function renderMasukPanel() {
               </select>
             </div>
             <div class="field">
-              <label>Pilih Vendor *</label>
-              <select name="vendor_id" id="masuk-vendor" required>
-                <option value="">- Pilih Vendor -</option>
+              <label>Vendor</label>
+              <select name="vendor_id" id="masuk-vendor">
+                <option value="">- Tanpa Vendor -</option>
                 ${optVendor}
               </select>
             </div>
@@ -595,10 +609,10 @@ async function renderMasukPanel() {
       </div>
 
       <div class="card">
-        <h3>Riwayat Barang Masuk (50 Terakhir)</h3>
+        <h3>Riwayat Barang Masuk (20 Terakhir)</h3>
         <div class="table-wrap"><table>
-          <thead><tr><th>Tanggal</th><th>Nama Barang</th><th>Batch</th><th>Status</th><th class="num">Jumlah</th><th class="num">Harga</th><th>Vendor</th><th>Aksi</th></tr></thead><tbody>
-          ${riwayat.length === 0 ? '<tr><td colspan="8" class="empty">Belum ada riwayat barang masuk.</td></tr>' : ''}
+          <thead><tr><th>Tanggal</th><th>Nama Barang</th><th>Batch</th><th>Status</th><th class="num">Jumlah</th><th class="num">HPP</th><th>Vendor</th></tr></thead><tbody>
+          ${riwayat.length === 0 ? '<tr><td colspan="7" class="empty">Belum ada riwayat barang masuk.</td></tr>' : ''}
           ${riwayat.map(r => `<tr>
             <td>${new Date(r.tanggal).toLocaleDateString('id-ID')}</td>
             <td>${escapeHtml(r.nama_barang)}</td>
@@ -607,64 +621,64 @@ async function renderMasukPanel() {
             <td class="num">${angka(r.qty)}</td>
             <td class="num">${rupiah(r.harga_satuan || 0)}</td>
             <td>${escapeHtml(r.vendor || '-')}</td>
-            <td>
-              <button class="btn secondary btn-edit-masuk" 
-                data-id="${r.id}" data-kode="${r.kode_barang}" data-tgl="${r.tanggal}" 
-                data-jml="${r.qty}" data-hrg="${r.harga_satuan}" data-vendor="${r.vendor || ''}" 
-                data-batch="${r.no_batch || '-'}"
-                style="padding:4px 10px;font-size:11px;margin-right:4px;">Edit</button>
-              <button class="btn secondary btn-hapus-masuk" data-id="${r.id}" style="padding:4px 10px;font-size:11px;background:#fbeae8;color:var(--danger);">Hapus</button>
-            </td>
           </tr>`).join('')}
         </tbody></table></div>
-      </div>
-
-      <!-- MODAL EDIT -->
-      <div id="modal-edit-masuk" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:9999; align-items:center; justify-content:center;">
-        <div style="background:#fff; padding:24px; border-radius:12px; width:100%; max-width:500px;">
-          <h3 style="margin-bottom:16px;">Edit Transaksi Masuk</h3>
-          <form id="form-edit-masuk">
-            <input type="hidden" name="id">
-            <div class="field-grid" style="grid-template-columns: 1fr 1fr;">
-              <div class="field full"><label>Tanggal *</label><input type="date" name="tanggal" required></div>
-              <div class="field full"><label>Barang *</label><select name="kode_barang" required><option value="">- Pilih -</option>${optBarang}</select></div>
-              <div class="field"><label>Jumlah *</label><input type="number" name="jumlah" min="1" required></div>
-              <div class="field"><label>Harga *</label><input type="number" name="harga" min="0" required></div>
-              <div class="field full"><label>Vendor *</label><input type="text" name="vendor" list="list-vendor"><datalist id="list-vendor">${optVendor}</datalist></div>
-              <div class="field full"><label>No. Batch</label><input type="text" name="no_batch"></div>
-            </div>
-            <div style="margin-top:20px; display:flex; gap:10px; justify-content:flex-end;">
-              <button type="button" class="btn secondary" id="btn-batal-edit">Batal</button>
-              <button type="submit" class="btn" id="btn-submit-edit">Simpan Perubahan</button>
-            </div>
-            <div class="msg" id="msg-edit-masuk" style="margin-top:10px;"></div>
-          </form>
-        </div>
       </div>
     `;
 
     document.getElementById('masuk-tgl').value = todayISO();
 
-    // 1. Submit Form Baru
+    // ==========================================
+    // LOGIKA SEARCH & AUTO-FILL
+    // ==========================================
+    const inputCari = document.getElementById('masuk-cari-barang');
+    const inputKode = document.getElementById('masuk-kode-barang');
+
+    inputCari.addEventListener('input', function() {
+      const val = this.value;
+      // Cek apakah teks yang diketik cocok dengan salah satu opsi di datalist
+      const barang = master.find(m => `${m.kode_barang} - ${m.nama_barang}` === val);
+      
+      if (barang) {
+        inputKode.value = barang.kode_barang; // Simpan kode asli untuk form
+        document.getElementById('masuk-hpp').value = barang.hpp || 0;
+        
+        if (barang.status_kepemilikan) {
+          document.getElementById('masuk-status').value = barang.status_kepemilikan;
+        }
+        
+        if (barang.vendor_id) {
+          document.getElementById('masuk-vendor').value = barang.vendor_id;
+        } else {
+          document.getElementById('masuk-vendor').value = ""; 
+        }
+      } else {
+        inputKode.value = ""; // Reset jika user mengetik ulang
+      }
+    });
+
+    // Submit Form
     document.getElementById('form-masuk').addEventListener('submit', async (e) => {
       e.preventDefault();
       const btn = document.getElementById('btn-masuk'); btn.disabled = true; btn.textContent = 'Menyimpan...';
       const msg = document.getElementById('msg-masuk'); msg.className = 'msg';
       const form = e.target;
 
-      if (!form.vendor_id.value) {
-         msg.textContent = '❌ Harap pilih vendor.'; msg.className = 'msg show err';
-         btn.disabled = false; btn.textContent = 'Simpan Penerimaan'; return;
+      if (!inputKode.value) {
+        msg.textContent = '❌ Harap pilih barang dari daftar pencarian yang muncul.';
+        msg.className = 'msg show err';
+        btn.disabled = false; btn.textContent = 'Simpan Penerimaan'; 
+        return;
       }
 
       try {
         await callRpc('rpc_barang_masuk', {
           p_tanggal: form.tanggal.value, 
-          p_kode_barang: form.kode_barang.value,
+          p_kode_barang: inputKode.value,
           p_jumlah: Number(form.jumlah.value), 
           p_harga: Number(form.harga.value),
           p_status_kepemilikan: form.status.value,
-          p_vendor_id: form.vendor_id.value,
+          p_vendor_id: form.vendor_id.value || null,
           p_no_batch: form.no_batch.value.trim() || '-',
           p_keterangan: null
         });
@@ -673,61 +687,6 @@ async function renderMasukPanel() {
       } catch (err) {
         msg.textContent = '❌ ' + err.message; msg.className = 'msg show err';
         btn.disabled = false; btn.textContent = 'Simpan Penerimaan';
-      }
-    });
-
-    // 2. Hapus
-    document.querySelectorAll('.btn-hapus-masuk').forEach(btn => {
-      btn.addEventListener('click', async function() {
-        if (!confirm('Yakin ingin menghapus transaksi ini? Stok akan dikurangi otomatis.')) return;
-        this.disabled = true; this.textContent = '...';
-        try {
-          await callRpc('rpc_hapus_transaksi', { p_transaksi_id: this.dataset.id });
-          renderMasukPanel();
-        } catch (err) { alert(err.message); this.disabled = false; this.textContent = 'Hapus'; }
-      });
-    });
-
-    // 3. Buka Modal Edit
-    const modal = document.getElementById('modal-edit-masuk');
-    document.querySelectorAll('.btn-edit-masuk').forEach(btn => {
-      btn.addEventListener('click', function() {
-        const f = document.getElementById('form-edit-masuk');
-        f.id.value = this.dataset.id;
-        f.tanggal.value = this.dataset.tgl;
-        f.kode_barang.value = this.dataset.kode;
-        f.jumlah.value = this.dataset.jml;
-        f.harga.value = this.dataset.hrg;
-        f.vendor.value = this.dataset.vendor;
-        f.no_batch.value = this.dataset.batch;
-        modal.style.display = 'flex';
-      });
-    });
-
-    document.getElementById('btn-batal-edit').addEventListener('click', () => modal.style.display = 'none');
-
-    // 4. Submit Edit
-    document.getElementById('form-edit-masuk').addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const btn = document.getElementById('btn-submit-edit'); btn.disabled = true; btn.textContent = 'Menyimpan...';
-      const msg = document.getElementById('msg-edit-masuk'); msg.className = 'msg';
-      const form = e.target;
-
-      try {
-        await callRpc('rpc_edit_barang_masuk', {
-          p_transaksi_id: form.id.value,
-          p_kode_barang: form.kode_barang.value,
-          p_tanggal: form.tanggal.value,
-          p_jumlah: Number(form.jumlah.value),
-          p_harga: Number(form.harga.value),
-          p_vendor: form.vendor.value.trim() || null,
-          p_no_batch: form.no_batch.value.trim() || '-'
-        });
-        msg.textContent = '✅ Berhasil diupdate.'; msg.className = 'msg show ok';
-        setTimeout(() => { modal.style.display = 'none'; renderMasukPanel(); }, 1000);
-      } catch (err) {
-        msg.textContent = '❌ ' + err.message; msg.className = 'msg show err';
-        btn.disabled = false; btn.textContent = 'Simpan Perubahan';
       }
     });
 
