@@ -552,7 +552,7 @@ async function renderParLevelPanel() {
 }
 
 // ============================================================
-// 6. PANEL BARANG MASUK (Revisi: Search Barang & Auto-Fill)
+// 6. PANEL BARANG MASUK (Fix HPP & Search)
 // ============================================================
 async function renderMasukPanel() {
   try {
@@ -560,10 +560,8 @@ async function renderMasukPanel() {
     const vendor = await selectView('vendor', { order: { column: 'nama' } });
     const riwayat = await selectView('v_kartu_stok', { eq: { jenis: 'masuk' }, order: { column: 'created_at', ascending: false }, limit: 20 });
     
-    // Simpan data master ke cache
     window.masterBarangCache = master; 
     
-    // Buat daftar untuk <datalist>
     let optBarangSearch = master.map(m => `<option value="${m.kode_barang} - ${m.nama_barang}">`).join('');
     let optVendor = vendor.map(v => `<option value="${v.id}">${v.nama}</option>`).join('');
 
@@ -581,7 +579,7 @@ async function renderMasukPanel() {
               <datalist id="list-barang">
                 ${optBarangSearch}
               </datalist>
-              <input type="hidden" name="kode_barang" id="masuk-kode-barang">
+              <input type="hidden" id="masuk-kode-barang">
             </div>
             
             <div class="field"><label>Jumlah Diterima *</label><input type="number" name="jumlah" min="1" required></div>
@@ -627,6 +625,63 @@ async function renderMasukPanel() {
     `;
 
     document.getElementById('masuk-tgl').value = todayISO();
+
+    // LOGIKA SEARCH & AUTO-FILL
+    const inputCari = document.getElementById('masuk-cari-barang');
+    const inputKode = document.getElementById('masuk-kode-barang');
+
+    inputCari.addEventListener('input', function() {
+      const val = this.value;
+      const barang = master.find(m => `${m.kode_barang} - ${m.nama_barang}` === val);
+      
+      if (barang) {
+        inputKode.value = barang.kode_barang;
+        document.getElementById('masuk-hpp').value = barang.hpp || 0;
+        if (barang.status_kepemilikan) document.getElementById('masuk-status').value = barang.status_kepemilikan;
+        if (barang.vendor_id) document.getElementById('masuk-vendor').value = barang.vendor_id;
+      } else {
+        inputKode.value = ""; 
+      }
+    });
+
+    // SUBMIT FORM (Penyebab HPP jadi 0 sudah diperbaiki di sini)
+    document.getElementById('form-masuk').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById('btn-masuk'); btn.disabled = true; btn.textContent = 'Menyimpan...';
+      const msg = document.getElementById('msg-masuk'); msg.className = 'msg';
+
+      if (!inputKode.value) {
+        msg.textContent = '❌ Harap pilih barang dari daftar pencarian yang muncul.';
+        msg.className = 'msg show err';
+        btn.disabled = false; btn.textContent = 'Simpan Penerimaan'; 
+        return;
+      }
+
+      const hargaInput = document.getElementById('masuk-hpp').value;
+      
+      try {
+        await callRpc('rpc_barang_masuk', {
+          p_tanggal: document.getElementById('masuk-tgl').value, 
+          p_kode_barang: inputKode.value,
+          p_jumlah: Number(document.querySelector('[name="jumlah"]').value), 
+          p_harga: Number(hargaInput), // Menggunakan variabel HPP yang benar
+          p_status_kepemilikan: document.getElementById('masuk-status').value,
+          p_vendor_id: document.getElementById('masuk-vendor').value || null,
+          p_no_batch: document.querySelector('[name="no_batch"]').value.trim() || '-',
+          p_keterangan: null
+        });
+        msg.textContent = '✅ Barang masuk berhasil dicatat.'; msg.className = 'msg show ok';
+        setTimeout(() => renderMasukPanel(), 1000);
+      } catch (err) {
+        msg.textContent = '❌ ' + err.message; msg.className = 'msg show err';
+        btn.disabled = false; btn.textContent = 'Simpan Penerimaan';
+      }
+    });
+
+  } catch (err) {
+    pageContent.innerHTML = `<div class="card"><div class="msg show err">Gagal: ${err.message}</div></div>`;
+  }
+}
 
     // ==========================================
     // LOGIKA SEARCH & AUTO-FILL
