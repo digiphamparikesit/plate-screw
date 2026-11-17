@@ -876,7 +876,7 @@ async function renderMutasiPanel() {
 }
 
 // ============================================================
-// 8. PANEL PENGELUARAN (Disederhanakan: Pilih Barang & Status)
+// 8. PANEL PENGELUARAN (Revisi: Hilangkan Minus di Tabel)
 // ============================================================
 async function renderKeluarPanel() {
   try {
@@ -885,7 +885,6 @@ async function renderKeluarPanel() {
     const gudangIBS = gudangUnit.length > 0 ? gudangUnit[0].id : null;
     const stokTersedia = stokIBS.filter(s => s.gudang_id === gudangIBS);
 
-    // Dropdown disederhanakan, value berisi: id_batch | kode_barang
     let optStok = stokTersedia.map(s => `
       <option value="${s.batch_id}|${s.kode_barang}">
         ${s.nama_barang} - ${s.status_kepemilikan === 'konsinyasi' ? 'Konsinyasi' : 'Milik RS'} (Tersedia: ${s.jumlah})
@@ -935,7 +934,7 @@ async function renderKeluarPanel() {
             <td>${escapeHtml(r.nama_barang)}</td>
             <td>${escapeHtml(r.no_batch || '-')}</td>
             <td>${r.status_kepemilikan === 'konsinyasi' ? '<span class="badge warn">Konsinyasi</span>' : 'Milik RS'}</td>
-            <td class="num">${angka(r.jumlah)}</td>
+            <td class="num">${angka(Math.abs(r.jumlah))}</td> <!-- REVISI: Hapus minus -->
             <td>
               <button class="btn secondary btn-edit-keluar" data-id="${r.id}" data-tgl="${r.tanggal}" data-jml="${r.jumlah}" data-pasien="${r.nama_pasien}" data-rm="${r.no_rekam_medik}" data-tujuan="${r.tujuan}" style="padding:4px 10px;font-size:11px;margin-right:4px;">Edit</button>
               <button class="btn secondary btn-hapus-keluar" data-id="${r.id}" style="padding:4px 10px;font-size:11px;background:#fbeae8;color:var(--danger);">Hapus</button>
@@ -974,7 +973,7 @@ async function renderKeluarPanel() {
       const btn = document.getElementById('btn-keluar'); btn.disabled = true; btn.textContent = 'Memproses...';
       const msg = document.getElementById('msg-keluar'); msg.className = 'msg';
       const form = e.target;
-      const info = form.batch_info.value.split('|'); // [batch_id, kode_barang]
+      const info = form.batch_info.value.split('|'); 
 
       if (info.length < 2) return alert('Pilih barang.');
 
@@ -992,7 +991,6 @@ async function renderKeluarPanel() {
       }
     });
 
-    // Logika Edit dan Hapus (tetap sama)
     document.querySelectorAll('.btn-hapus-keluar').forEach(btn => {
       btn.addEventListener('click', async function() {
         if (!confirm('Batalkan pengeluaran ini? Stok akan kembali ke IBS.')) return;
@@ -1119,7 +1117,7 @@ async function renderNotifikasiPanel() {
 }
 
 // ============================================================
-// 11. PANEL LAPORAN PEMAKAIAN (Fix Syntax Error & +Batch)
+// 11. PANEL LAPORAN PEMAKAIAN (Revisi: Hilangkan Minus)
 // ============================================================
 async function renderPemakaianPanel() {
   try {
@@ -1149,7 +1147,6 @@ async function renderPemakaianPanel() {
       <div id="lap-hasil"></div>
     `;
 
-    // Set default ke tanggal 1 bulan ini s/d hari ini
     document.getElementById('lap-mulai').value = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0,10);
     document.getElementById('lap-akhir').value = todayISO();
 
@@ -1162,10 +1159,7 @@ async function renderPemakaianPanel() {
       btn.disabled = true; btn.textContent = 'Memuat...';
 
       try {
-        // 1. Ambil data dasar
         let q = sb.from('v_laporan_pemakaian_sp').select('*').eq('status_kepemilikan', 'konsinyasi');
-        
-        // 2. Terapkan filter hanya jika tanggal diisi
         if (mulai) q = q.gte('tanggal', mulai);
         if (akhir) q = q.lte('tanggal', akhir);
         if (vnd) q = q.eq('vendor', vnd);
@@ -1189,8 +1183,9 @@ async function renderPemakaianPanel() {
         
         let totalQty = 0;
         data.forEach((r, i) => {
-          totalQty += r.jumlah;
+          totalQty += Math.abs(r.jumlah); // Pastikan total tetap positif
           const tglIndo = new Date(r.tanggal).toLocaleDateString('id-ID');
+          
           html += `<tr>
             <td>${i + 1}</td>
             <td>${tglIndo}</td>
@@ -1198,7 +1193,7 @@ async function renderPemakaianPanel() {
             <td>${escapeHtml(r.no_rekam_medik)}</td>
             <td>${escapeHtml(r.nama_barang)}</td>
             <td>${escapeHtml(r.no_batch || '-')}</td>
-            <td class="num">${angka(r.jumlah)}</td>
+            <td class="num">${angka(Math.abs(r.jumlah))}</td> <!-- REVISI: Hapus minus -->
             <td>${escapeHtml(r.tujuan)}</td>
           </tr>`;
         });
@@ -1208,13 +1203,12 @@ async function renderPemakaianPanel() {
         
         container.innerHTML = html;
 
-        // Fitur Export CSV
         document.getElementById('btn-export-csv').addEventListener('click', () => {
           let csvContent = "data:text/csv;charset=utf-8,";
           csvContent += "Tanggal,Nama Pasien,No Rekam Medik,Nama Barang,Batch,Jumlah,Tujuan\n";
           data.forEach(r => {
             const tglIndo = new Date(r.tanggal).toLocaleDateString('id-ID');
-            csvContent += `"${tglIndo}","${r.nama_pasien}","${r.no_rekam_medik}","${r.nama_barang}","${r.no_batch || '-'}",${r.jumlah},"${r.tujuan}"\n`;
+            csvContent += `"${tglIndo}","${r.nama_pasien}","${r.no_rekam_medik}","${r.nama_barang}","${r.no_batch || '-'}",${Math.abs(r.jumlah)},"${r.tujuan}"\n`;
           });
           const encodedUri = encodeURI(csvContent);
           const link = document.createElement("a");
