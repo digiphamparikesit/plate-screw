@@ -511,7 +511,7 @@ async function renderParLevelPanel() {
 }
 
 // ============================================================
-// 6. PANEL BARANG MASUK (REVISI: +Kolom Batch)
+// 6. PANEL BARANG MASUK (REVISI: +Kolom Batch & Status)
 // ============================================================
 async function renderMasukPanel() {
   try {
@@ -577,7 +577,8 @@ async function renderMasukPanel() {
           </tr>`).join('')}
         </tbody></table></div>
       </div>
-      <!-- SISA KODE MODAL EDIT DLL TETAP SAMA SEPERTI SEBELUMNYA -->
+
+      <!-- MODAL EDIT -->
       <div id="modal-edit-masuk" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:9999; align-items:center; justify-content:center;">
         <div style="background:#fff; padding:24px; border-radius:12px; width:100%; max-width:500px;">
           <h3 style="margin-bottom:16px;">Edit Transaksi Masuk</h3>
@@ -600,7 +601,100 @@ async function renderMasukPanel() {
         </div>
       </div>
     `;
-    // ... (Logika JS event listener submit, edit, hapus di bawahnya biarkan tetap sama seperti yang sudah ada di file Anda)
+
+    document.getElementById('masuk-tgl').value = todayISO();
+
+    // 1. Submit Form Baru
+    document.getElementById('form-masuk').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById('btn-masuk'); btn.disabled = true; btn.textContent = 'Menyimpan...';
+      const msg = document.getElementById('msg-masuk'); msg.className = 'msg';
+      const form = e.target;
+
+      if (!form.vendor_id.value) {
+         msg.textContent = '❌ Harap pilih vendor.'; msg.className = 'msg show err';
+         btn.disabled = false; btn.textContent = 'Simpan Penerimaan'; return;
+      }
+
+      try {
+        await callRpc('rpc_barang_masuk', {
+          p_tanggal: form.tanggal.value, 
+          p_kode_barang: form.kode_barang.value,
+          p_jumlah: Number(form.jumlah.value), 
+          p_harga: Number(form.harga.value),
+          p_status_kepemilikan: form.status.value,
+          p_vendor_id: form.vendor_id.value,
+          p_no_batch: form.no_batch.value.trim() || '-',
+          p_keterangan: null
+        });
+        msg.textContent = '✅ Barang masuk berhasil dicatat.'; msg.className = 'msg show ok';
+        setTimeout(() => renderMasukPanel(), 1000);
+      } catch (err) {
+        msg.textContent = '❌ ' + err.message; msg.className = 'msg show err';
+        btn.disabled = false; btn.textContent = 'Simpan Penerimaan';
+      }
+    });
+
+    // 2. Hapus
+    document.querySelectorAll('.btn-hapus-masuk').forEach(btn => {
+      btn.addEventListener('click', async function() {
+        if (!confirm('Yakin ingin menghapus transaksi ini? Stok akan dikurangi otomatis.')) return;
+        this.disabled = true; this.textContent = '...';
+        try {
+          await callRpc('rpc_hapus_transaksi', { p_transaksi_id: this.dataset.id });
+          renderMasukPanel();
+        } catch (err) { alert(err.message); this.disabled = false; this.textContent = 'Hapus'; }
+      });
+    });
+
+    // 3. Buka Modal Edit
+    const modal = document.getElementById('modal-edit-masuk');
+    document.querySelectorAll('.btn-edit-masuk').forEach(btn => {
+      btn.addEventListener('click', function() {
+        const f = document.getElementById('form-edit-masuk');
+        f.id.value = this.dataset.id;
+        f.tanggal.value = this.dataset.tgl;
+        f.kode_barang.value = this.dataset.kode;
+        f.jumlah.value = this.dataset.jml;
+        f.harga.value = this.dataset.hrg;
+        f.vendor.value = this.dataset.vendor;
+        f.no_batch.value = this.dataset.batch;
+        modal.style.display = 'flex';
+      });
+    });
+
+    document.getElementById('btn-batal-edit').addEventListener('click', () => modal.style.display = 'none');
+
+    // 4. Submit Edit
+    document.getElementById('form-edit-masuk').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById('btn-submit-edit'); btn.disabled = true; btn.textContent = 'Menyimpan...';
+      const msg = document.getElementById('msg-edit-masuk'); msg.className = 'msg';
+      const form = e.target;
+
+      try {
+        await callRpc('rpc_edit_barang_masuk', {
+          p_transaksi_id: form.id.value,
+          p_kode_barang: form.kode_barang.value,
+          p_tanggal: form.tanggal.value,
+          p_jumlah: Number(form.jumlah.value),
+          p_harga: Number(form.harga.value),
+          p_vendor: form.vendor.value.trim() || null,
+          p_no_batch: form.no_batch.value.trim() || '-'
+        });
+        msg.textContent = '✅ Berhasil diupdate.'; msg.className = 'msg show ok';
+        setTimeout(() => { modal.style.display = 'none'; renderMasukPanel(); }, 1000);
+      } catch (err) {
+        msg.textContent = '❌ ' + err.message; msg.className = 'msg show err';
+        btn.disabled = false; btn.textContent = 'Simpan Perubahan';
+      }
+    });
+
+  } catch (err) {
+    pageContent.innerHTML = `<div class="card"><div class="msg show err">Gagal: ${err.message}</div></div>`;
+  }
+}
+
 
 // ============================================================
 // 7. PANEL MUTASI (REVISI: Riwayat, Edit, Hapus)
