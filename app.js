@@ -1127,7 +1127,7 @@ async function renderNotifikasiPanel() {
 }
 
 // ============================================================
-// 11. PANEL LAPORAN PEMAKAIAN (REVISI: Fix Tanggal & Pencarian)
+// 11. PANEL LAPORAN PEMAKAIAN (Fix Syntax Error & +Batch)
 // ============================================================
 async function renderPemakaianPanel() {
   try {
@@ -1187,9 +1187,6 @@ async function renderPemakaianPanel() {
           return;
         }
 
-        async function renderPemakaianPanel() { ... }. Ganti bagian render tabelnya (cari let html = \<div class="card">`) menjadi:
-
-javascript
         let html = `<div class="card">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
             <h3 style="margin:0;">Data Pemakaian Periode ${mulai || 'Awal'} s/d ${akhir || 'Akhir'}</h3>
