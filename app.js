@@ -177,7 +177,7 @@ async function renderStokPanel() {
 }
 
 // ============================================================
-// 4. PANEL MASTER BARANG (Revisi: ID, Nama, Satuan, HPP, Vendor, Jenis)
+// 4. PANEL MASTER BARANG (Revisi: Upload CSV)
 // ============================================================
 async function renderMasterPanel() {
   try {
@@ -221,11 +221,13 @@ async function renderMasterPanel() {
       </div>
 
       <div class="card" style="border: 2px dashed var(--primary-light); background: #f8fbfa;">
-        <h3>📤 Import Barang (Copy-Paste dari Excel)</h3>
-        <div class="sub">Urutan Kolom: <strong>ID, Nama, Satuan, HPP, Jenis, Vendor, Status, Batch</strong></div>
-        <textarea id="excel-paste" rows="4" style="width:100%; padding:10px; font-family:monospace; border:1px solid var(--border); border-radius:6px; margin-bottom:12px;" placeholder="PL-005&#9;Plate Mini&#9;pcs&#9;250000&#9;Plate&#9;PT Distributor Ortopedi&#9;milik_rs&#9;-"></textarea>
-        <button class="btn" id="btn-import-excel">Proses Import</button>
-        <div class="msg" id="msg-excel"></div>
+        <h3>📤 Upload File CSV</h3>
+        <div class="sub">Simpan Excel Anda sebagai <strong>CSV (Comma delimited)</strong>, lalu upload di sini.</div>
+        <div style="display:flex; gap:10px; align-items:center;">
+          <input type="file" id="file-csv" accept=".csv" style="padding:8px; border:1px solid var(--border); border-radius:6px; width:100%; max-width:300px;">
+          <button class="btn" id="btn-upload-csv">Upload & Import</button>
+        </div>
+        <div class="msg" id="msg-csv"></div>
       </div>
 
       <div class="card">
@@ -247,7 +249,7 @@ async function renderMasterPanel() {
                 ${isAktif ? `
                   <button class="btn secondary btn-edit-master" 
                     data-id="${b.id}" data-kode="${b.kode_barang}" data-nama="${b.nama_barang}" 
-                    data-satuan="${b.satuan}" data-hpp="${b.hpp}" 
+                    data-satuan="${b.satuan_jual || b.satuan}" data-hpp="${b.hpp}" 
                     data-jenis="${b.jenis_barang || ''}" 
                     data-status="${b.status_kepemilikan || 'milik_rs'}" data-vendor="${b.vendor_id || ''}"
                     data-batch="${b.no_batch || ''}"
@@ -298,6 +300,7 @@ async function renderMasterPanel() {
       </div>
     `;
 
+    // Logika Form Manual (tetap sama)
     const selStatus = document.getElementById('master-status');
     const selVendor = document.getElementById('master-vendor');
     selStatus.addEventListener('change', (e) => {
@@ -305,7 +308,6 @@ async function renderMasterPanel() {
       else { selVendor.disabled = false; }
     });
 
-    // Submit Form Manual
     document.getElementById('form-master').addEventListener('submit', async (e) => {
       e.preventDefault();
       const btn = document.getElementById('btn-simpan-master'); btn.disabled = true; btn.textContent = 'Menyimpan...';
@@ -315,7 +317,7 @@ async function renderMasterPanel() {
         const vId = vendor.find(v => v.nama === form.vendor_name.value)?.id || null;
         const { error } = await sb.from('master_barang').insert({
           kode_barang: form.kode_barang.value.trim(), nama_barang: form.nama_barang.value.trim(), 
-          satuan: form.satuan.value.trim(), hpp: Number(form.hpp.value),
+          satuan_jual: form.satuan.value.trim(), hpp: Number(form.hpp.value),
           jenis_barang: form.jenis_barang.value,
           status_kepemilikan: form.status_kepemilikan.value, vendor_id: vId,
           no_batch: form.no_batch.value.trim() || '-'
@@ -329,52 +331,69 @@ async function renderMasterPanel() {
       }
     });
 
-    // Import Excel
-    document.getElementById('btn-import-excel').addEventListener('click', async () => {
-      const raw = document.getElementById('excel-paste').value.trim();
-      if (!raw) return alert('Tempelkan data Excel terlebih dahulu.');
-      const btn = document.getElementById('btn-import-excel'); btn.disabled = true; btn.textContent = 'Memproses...';
-      const msg = document.getElementById('msg-excel'); msg.className = 'msg';
-      const rows = raw.split('\n'); let success = 0; let failed = 0;
+    // FITUR BARU: Upload File CSV
+    document.getElementById('btn-upload-csv').addEventListener('click', () => {
+      const fileInput = document.getElementById('file-csv');
+      const file = fileInput.files[0];
+      if (!file) return alert('Pilih file CSV terlebih dahulu.');
+      
+      const reader = new FileReader();
+      reader.onload = async function(e) {
+        const text = e.target.result;
+        const rows = text.split('\n');
+        let success = 0; let failed = 0;
+        const btn = document.getElementById('btn-upload-csv');
+        const msg = document.getElementById('msg-csv');
+        
+        btn.disabled = true; btn.textContent = 'Memproses...'; msg.className = 'msg';
 
-      for (let i = 0; i < rows.length; i++) {
-        const row = rows[i].trim(); if (!row) continue;
-        const cols = row.split('\t');
-        if (cols.length < 4) { failed++; continue; }
-        try {
-          const vendorName = cols[5] ? cols[5].trim() : '';
-          const vId = vendor.find(v => v.nama === vendorName)?.id || null;
+        for (let i = 0; i < rows.length; i++) {
+          const row = rows[i].trim();
+          if (!row || row.startsWith('ID,') || row.startsWith('"ID"')) continue; // Lewati header Excel
 
-          const { error } = await sb.from('master_barang').insert({
-            kode_barang: cols[0].trim(), nama_barang: cols[1].trim(), satuan: cols[2].trim() || 'pcs',
-            hpp: Number(cols[3].trim()) || 0, 
-            jenis_barang: cols[4] ? cols[4].trim() : null, 
-            vendor_id: vId,
-            status_kepemilikan: (cols[6] && cols[6].trim().toLowerCase() === 'konsinyasi') ? 'konsinyasi' : 'milik_rs', 
-            no_batch: (cols[7] ? cols[7].trim() : '-')
-          });
-          if (error) throw new Error(); success++;
-        } catch (err) { failed++; }
-      }
-      msg.textContent = `✅ ${success} berhasil. ❌ ${failed} gagal.`;
-      msg.className = `msg show ${failed === 0 ? 'ok' : 'warn'}`;
-      if (success > 0) { document.getElementById('excel-paste').value = ''; setTimeout(() => renderMasterPanel(), 1500); }
-      btn.disabled = false; btn.textContent = 'Proses Import';
+          // Memisahkan berdasarkan koma (,) jika dari CSV, atau Tab (\t) jika masih dari Excel
+          let cols = row.split(',');
+          if (cols.length < 5) cols = row.split('\t'); // Antisipasi jika user paste Tab
+          if (cols.length < 5) { failed++; continue; }
+
+          try {
+            // Sesuaikan urutan berdasarkan CSV: ID, Nama, Satuan, HPP, Jenis, Vendor, Status, Batch
+            const vName = cols[5] ? cols[5].replace(/"/g, '').trim() : '';
+            const vId = vendor.find(v => v.nama === vName)?.id || null;
+            
+            const { error } = await sb.from('master_barang').insert({
+              kode_barang: cols[0].replace(/"/g, '').trim(), 
+              nama_barang: cols[1].replace(/"/g, '').trim(), 
+              satuan_jual: cols[2].replace(/"/g, '').trim() || 'pcs',
+              hpp: Number(cols[3].replace(/[^0-9]/g, '')) || 0, // Bersihkan titik/Rp jika ada
+              jenis_barang: cols[4].replace(/"/g, '').trim(), 
+              vendor_id: vId,
+              status_kepemilikan: (cols[6] && cols[6].toLowerCase().includes('konsinyasi')) ? 'konsinyasi' : 'milik_rs', 
+              no_batch: (cols[7] ? cols[7].replace(/"/g, '').trim() : '-')
+            });
+            if (error) throw new Error(); success++;
+          } catch (err) { failed++; }
+        }
+
+        msg.textContent = `✅ ${success} berhasil di-import. ❌ ${failed} gagal.`;
+        msg.className = `msg show ${failed === 0 ? 'ok' : 'err'}`;
+        if (success > 0) setTimeout(() => renderMasterPanel(), 1500);
+        btn.disabled = false; btn.textContent = 'Upload & Import';
+        fileInput.value = '';
+      };
+      reader.readAsText(file);
     });
 
-    // Hapus
+    // Sisa logika Hapus & Edit (tetap sama)
     document.querySelectorAll('.btn-hapus-master').forEach(btn => {
       btn.addEventListener('click', async function() {
         if (!confirm(`Arsipkan barang ${this.dataset.kode}?`)) return;
         this.disabled = true; this.textContent = '...';
-        try {
-          await sb.from('master_barang').update({ aktif: false }).eq('id', this.dataset.id);
-          renderMasterPanel();
-        } catch (err) { alert(err.message); this.disabled = false; this.textContent = 'Hapus'; }
+        try { await sb.from('master_barang').update({ aktif: false }).eq('id', this.dataset.id); renderMasterPanel(); } 
+        catch (err) { alert(err.message); this.disabled = false; this.textContent = 'Hapus'; }
       });
     });
 
-    // Buka Modal Edit
     const modal = document.getElementById('modal-edit-master');
     document.querySelectorAll('.btn-edit-master').forEach(btn => {
       btn.addEventListener('click', function() {
@@ -383,10 +402,8 @@ async function renderMasterPanel() {
         f.satuan.value = this.dataset.satuan; f.hpp.value = this.dataset.hpp;
         f.jenis_barang.value = this.dataset.jenis;
         f.status_kepemilikan.value = this.dataset.status; f.no_batch.value = this.dataset.batch;
-        
         const vName = vendor.find(v => v.id === this.dataset.vendor)?.nama || '';
         f.vendor_name.value = vName;
-
         if (f.status_kepemilikan.value === 'milik_rs') f.vendor_name.disabled = true;
         else f.vendor_name.disabled = false;
         modal.style.display = 'flex';
@@ -400,7 +417,6 @@ async function renderMasterPanel() {
 
     document.getElementById('btn-batal-edit-master').addEventListener('click', () => modal.style.display = 'none');
 
-    // Submit Edit
     document.getElementById('form-edit-master').addEventListener('submit', async (e) => {
       e.preventDefault();
       const btn = document.getElementById('btn-submit-edit-master'); btn.disabled = true; btn.textContent = 'Menyimpan...';
@@ -409,7 +425,7 @@ async function renderMasterPanel() {
       try {
         const vId = vendor.find(v => v.nama === form.vendor_name.value)?.id || null;
         await sb.from('master_barang').update({
-          nama_barang: form.nama_barang.value.trim(), satuan: form.satuan.value.trim(),
+          nama_barang: form.nama_barang.value.trim(), satuan_jual: form.satuan.value.trim(),
           hpp: Number(form.hpp.value), jenis_barang: form.jenis_barang.value,
           status_kepemilikan: form.status_kepemilikan.value, vendor_id: vId,
           no_batch: form.no_batch.value.trim() || '-'
