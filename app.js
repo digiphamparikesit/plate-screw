@@ -1187,18 +1187,20 @@ async function renderPemakaianPanel() {
           return;
         }
 
+        async function renderPemakaianPanel() { ... }. Ganti bagian render tabelnya (cari let html = \<div class="card">`) menjadi:
+
+javascript
         let html = `<div class="card">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
             <h3 style="margin:0;">Data Pemakaian Periode ${mulai || 'Awal'} s/d ${akhir || 'Akhir'}</h3>
             <button class="btn secondary" id="btn-export-csv">⬇ Export CSV</button>
           </div>
           <div class="table-wrap"><table>
-            <thead><tr><th>No</th><th>Tanggal</th><th>Nama Pasien</th><th>No. RM</th><th>Nama Barang</th><th class="num">Jumlah</th><th>Tujuan</th></tr></thead><tbody>`;
+            <thead><tr><th>No</th><th>Tanggal</th><th>Nama Pasien</th><th>No. RM</th><th>Nama Barang</th><th>Batch</th><th class="num">Jumlah</th><th>Tujuan</th></tr></thead><tbody>`;
         
         let totalQty = 0;
         data.forEach((r, i) => {
           totalQty += r.jumlah;
-          // Format tanggal dari database (YYYY-MM-DD) ke format Indonesia (DD/MM/YYYY)
           const tglIndo = new Date(r.tanggal).toLocaleDateString('id-ID');
           html += `<tr>
             <td>${i + 1}</td>
@@ -1206,6 +1208,7 @@ async function renderPemakaianPanel() {
             <td>${escapeHtml(r.nama_pasien)}</td>
             <td>${escapeHtml(r.no_rekam_medik)}</td>
             <td>${escapeHtml(r.nama_barang)}</td>
+            <td>${escapeHtml(r.no_batch || '-')}</td>
             <td class="num">${angka(r.jumlah)}</td>
             <td>${escapeHtml(r.tujuan)}</td>
           </tr>`;
@@ -1219,10 +1222,10 @@ async function renderPemakaianPanel() {
         // Fitur Export CSV
         document.getElementById('btn-export-csv').addEventListener('click', () => {
           let csvContent = "data:text/csv;charset=utf-8,";
-          csvContent += "Tanggal,Nama Pasien,No Rekam Medik,Nama Barang,Jumlah,Tujuan\n";
+          csvContent += "Tanggal,Nama Pasien,No Rekam Medik,Nama Barang,Batch,Jumlah,Tujuan\n";
           data.forEach(r => {
             const tglIndo = new Date(r.tanggal).toLocaleDateString('id-ID');
-            csvContent += `"${tglIndo}","${r.nama_pasien}","${r.no_rekam_medik}","${r.nama_barang}",${r.jumlah},"${r.tujuan}"\n`;
+            csvContent += `"${tglIndo}","${r.nama_pasien}","${r.no_rekam_medik}","${r.nama_barang}","${r.no_batch || '-'}",${r.jumlah},"${r.tujuan}"\n`;
           });
           const encodedUri = encodeURI(csvContent);
           const link = document.createElement("a");
