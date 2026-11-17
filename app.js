@@ -677,9 +677,9 @@ async function renderMasukPanel() {
       try {
         await callRpc('rpc_barang_masuk', {
           p_tanggal: form.tanggal.value, 
-          p_kode_barang: inputKode.value,
+          p_kode_barang: document.getElementById('masuk-kode-barang').value,
           p_jumlah: Number(form.jumlah.value), 
-          p_harga: nilaiHPP, // <--- GUNAKAN VARIABEL YANG BARU KITA AMBIL
+          p_harga: Number(document.getElementById('masuk-hpp').value), // <--- PERBAIKAN DI SINI
           p_status_kepemilikan: form.status.value,
           p_vendor_id: form.vendor_id.value || null,
           p_no_batch: form.no_batch.value.trim() || '-',
