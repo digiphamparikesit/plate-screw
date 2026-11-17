@@ -657,7 +657,7 @@ async function renderMasukPanel() {
       }
     });
 
-    // Submit Form
+       // Submit Form
     document.getElementById('form-masuk').addEventListener('submit', async (e) => {
       e.preventDefault();
       const btn = document.getElementById('btn-masuk'); btn.disabled = true; btn.textContent = 'Menyimpan...';
@@ -671,12 +671,15 @@ async function renderMasukPanel() {
         return;
       }
 
+      // AMBIL NILAI HPP SECARA SPESIFIK DARI ID INPUT-NYA
+      const nilaiHPP = Number(document.getElementById('masuk-hpp').value);
+
       try {
         await callRpc('rpc_barang_masuk', {
           p_tanggal: form.tanggal.value, 
           p_kode_barang: inputKode.value,
           p_jumlah: Number(form.jumlah.value), 
-          p_harga: Number(form.harga.value),
+          p_harga: nilaiHPP, // <--- GUNAKAN VARIABEL YANG BARU KITA AMBIL
           p_status_kepemilikan: form.status.value,
           p_vendor_id: form.vendor_id.value || null,
           p_no_batch: form.no_batch.value.trim() || '-',
