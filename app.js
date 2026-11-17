@@ -179,7 +179,7 @@ async function renderStokPanel() {
 }
 
 // ============================================================
-// 4. PANEL MASTER BARANG (REVISI: Edit Lengkap & Soft Delete)
+// 4. PANEL MASTER BARANG (REVISI: +Kolom Batch/Lot)
 // ============================================================
 async function renderMasterPanel() {
   try {
@@ -200,6 +200,7 @@ async function renderMasterPanel() {
             <div class="field"><label>Nama Barang *</label><input type="text" name="nama_barang" required placeholder="Plate Reconstruction 4.5mm"></div>
             <div class="field"><label>Satuan *</label><input type="text" name="satuan" value="pcs" required></div>
             <div class="field"><label>Harga Terakhir (Rp) *</label><input type="number" name="harga_terakhir" min="0" required value="0"></div>
+            
             <div class="field">
               <label>Status Kepemilikan *</label>
               <select name="status_kepemilikan" id="master-status" required>
@@ -213,6 +214,10 @@ async function renderMasterPanel() {
                 <option value="">- Tanpa Vendor -</option>${optVendor}
               </select>
             </div>
+            <div class="field">
+              <label>No. Batch / Lot</label>
+              <input type="text" name="no_batch" placeholder="-">
+            </div>
           </div>
           <button class="btn" type="submit" style="margin-top:16px;" id="btn-simpan-master">Simpan Barang</button>
           <div class="msg" id="msg-master"></div>
@@ -221,8 +226,8 @@ async function renderMasterPanel() {
 
       <div class="card" style="border: 2px dashed var(--primary-light); background: #f8fbfa;">
         <h3>📤 Import Barang (Copy-Paste dari Excel)</h3>
-        <div class="sub">Format: <strong>Kategori (PL/SC/XX), Nama Barang, Satuan, Harga, Status (milik_rs/konsinyasi)</strong></div>
-        <textarea id="excel-paste" rows="4" style="width:100%; padding:10px; font-family:monospace; border:1px solid var(--border); border-radius:6px; margin-bottom:12px;" placeholder="PL&#9;Plate Mini 2.0mm&#9;pcs&#9;250000&#9;milik_rs"></textarea>
+        <div class="sub">Format: <strong>Kategori, Nama Barang, Satuan, Harga, Status, Batch</strong> (Pisahkan dengan Tab)</div>
+        <textarea id="excel-paste" rows="4" style="width:100%; padding:10px; font-family:monospace; border:1px solid var(--border); border-radius:6px; margin-bottom:12px;" placeholder="PL&#9;Plate Mini 2.0mm&#9;pcs&#9;250000&#9;milik_rs&#9;-"></textarea>
         <button class="btn" id="btn-import-excel">Proses Import</button>
         <div class="msg" id="msg-excel"></div>
       </div>
@@ -230,7 +235,7 @@ async function renderMasterPanel() {
       <div class="card">
         <h3>Daftar Barang</h3>
         <div class="table-wrap"><table>
-          <thead><tr><th>Kode</th><th>Nama Barang</th><th>Kategori</th><th>Status</th><th>Vendor</th><th class="num">Harga</th><th>Aksi</th></tr></thead><tbody>
+          <thead><tr><th>Kode</th><th>Nama Barang</th><th>Batch</th><th>Status</th><th>Vendor</th><th class="num">Harga</th><th>Aksi</th></tr></thead><tbody>
           ${master.length === 0 ? '<tr><td colspan="7" class="empty">Belum ada data.</td></tr>' : ''}
           ${master.map(b => {
             const vnd = vendor.find(v => v.id === b.vendor_id);
@@ -238,20 +243,17 @@ async function renderMasterPanel() {
             return `<tr style="${!isAktif ? 'opacity:0.5; background:#f9f9f9;' : ''}">
               <td><strong>${escapeHtml(b.kode_barang)}</strong></td>
               <td>${escapeHtml(b.nama_barang)}</td>
-              <td>${escapeHtml(b.prefix)}</td>
+              <td>${escapeHtml(b.no_batch || '-')}</td>
               <td>${b.status_kepemilikan === 'konsinyasi' ? '<span class="badge warn">Konsinyasi</span>' : 'Milik RS'}</td>
               <td>${vnd ? escapeHtml(vnd.nama) : '-'}</td>
               <td class="num">${rupiah(b.harga_terakhir)}</td>
               <td style="white-space:nowrap;">
                 ${isAktif ? `
                   <button class="btn secondary btn-edit-master" 
-                    data-id="${b.id}" 
-                    data-kode="${b.kode_barang}" 
-                    data-nama="${b.nama_barang}" 
-                    data-satuan="${b.satuan}" 
-                    data-harga="${b.harga_terakhir}" 
-                    data-status="${b.status_kepemilikan || 'milik_rs'}" 
-                    data-vendor="${b.vendor_id || ''}"
+                    data-id="${b.id}" data-kode="${b.kode_barang}" data-nama="${b.nama_barang}" 
+                    data-satuan="${b.satuan}" data-harga="${b.harga_terakhir}" 
+                    data-status="${b.status_kepemilikan || 'milik_rs'}" data-vendor="${b.vendor_id || ''}"
+                    data-batch="${b.no_batch || ''}"
                     style="padding:4px 10px;font-size:11px;margin-right:4px;">Edit</button>
                   <button class="btn secondary btn-hapus-master" data-id="${b.id}" data-kode="${b.kode_barang}" style="padding:4px 10px;font-size:11px;background:#fbeae8;color:var(--danger);">Hapus</button>
                 ` : '<span style="font-size:11px;color:var(--text-muted);">Diarsipkan</span>'}
@@ -285,6 +287,7 @@ async function renderMasterPanel() {
                   <option value="">- Tanpa Vendor -</option>${optVendor}
                 </select>
               </div>
+              <div class="field full"><label>No. Batch / Lot</label><input type="text" name="no_batch" placeholder="-"></div>
             </div>
             <div style="margin-top:20px; display:flex; gap:10px; justify-content:flex-end;">
               <button type="button" class="btn secondary" id="btn-batal-edit-master">Batal</button>
@@ -317,7 +320,8 @@ async function renderMasterPanel() {
           nama_barang: form.nama_barang.value.trim(), satuan: form.satuan.value.trim(),
           harga_terakhir: Number(form.harga_terakhir.value),
           status_kepemilikan: form.status_kepemilikan.value,
-          vendor_id: form.vendor_id.value || null
+          vendor_id: form.vendor_id.value || null,
+          no_batch: form.no_batch.value.trim() || '-'
         });
         if (error) throw new Error(error.message);
         msg.textContent = `✅ Berhasil! Kode: ${kodeBaru}`; msg.className = 'msg show ok';
@@ -347,7 +351,8 @@ async function renderMasterPanel() {
             nama_barang: cols[1].trim(), satuan: cols[2].trim() || 'pcs',
             harga_terakhir: Number(cols[3].trim()) || 0, 
             status_kepemilikan: (cols[4] ? cols[4].trim().toLowerCase() : 'milik_rs') === 'konsinyasi' ? 'konsinyasi' : 'milik_rs', 
-            vendor_id: null
+            vendor_id: null,
+            no_batch: (cols[5] ? cols[5].trim() : '-')
           });
           if (error) throw new Error(); success++;
         } catch (err) { failed++; }
@@ -358,10 +363,10 @@ async function renderMasterPanel() {
       btn.disabled = false; btn.textContent = 'Proses Import';
     });
 
-    // Fitur Hapus (Soft Delete)
+    // Hapus (Soft Delete)
     document.querySelectorAll('.btn-hapus-master').forEach(btn => {
       btn.addEventListener('click', async function() {
-        if (!confirm(`Arsipkan barang ${this.dataset.kode}? Barang tidak akan muncul di form transaksi, tapi riwayatnya tetap aman.`)) return;
+        if (!confirm(`Arsipkan barang ${this.dataset.kode}?`)) return;
         this.disabled = true; this.textContent = '...';
         try {
           const { error } = await sb.from('master_barang').update({ aktif: false }).eq('id', this.dataset.id);
@@ -371,52 +376,44 @@ async function renderMasterPanel() {
       });
     });
 
-    // Fitur Buka Modal Edit
+    // Buka Modal Edit
     const modal = document.getElementById('modal-edit-master');
     document.querySelectorAll('.btn-edit-master').forEach(btn => {
       btn.addEventListener('click', function() {
         const f = document.getElementById('form-edit-master');
-        f.id.value = this.dataset.id;
-        f.kode_barang.value = this.dataset.kode;
-        f.nama_barang.value = this.dataset.nama;
-        f.satuan.value = this.dataset.satuan;
-        f.harga_terakhir.value = this.dataset.harga;
-        
-        f.status_kepemilikan.value = this.dataset.status;
-        f.vendor_id.value = this.dataset.vendor;
+        f.id.value = this.dataset.id; f.kode_barang.value = this.dataset.kode; f.nama_barang.value = this.dataset.nama;
+        f.satuan.value = this.dataset.satuan; f.harga_terakhir.value = this.dataset.harga;
+        f.status_kepemilikan.value = this.dataset.status; f.vendor_id.value = this.dataset.vendor;
+        f.no_batch.value = this.dataset.batch;
 
-        // Trigger logika dropdown vendor
         if (f.status_kepemilikan.value === 'milik_rs') f.vendor_id.disabled = true;
         else f.vendor_id.disabled = false;
-
         modal.style.display = 'flex';
       });
     });
 
     document.getElementById('edit-status').addEventListener('change', (e) => {
       const v = document.getElementById('edit-vendor');
-      if (e.target.value === 'milik_rs') { v.value = ''; v.disabled = true; } 
-      else { v.disabled = false; }
+      if (e.target.value === 'milik_rs') { v.value = ''; v.disabled = true; } else { v.disabled = false; }
     });
 
     document.getElementById('btn-batal-edit-master').addEventListener('click', () => modal.style.display = 'none');
 
-    // Fitur Submit Edit
+    // Submit Edit
     document.getElementById('form-edit-master').addEventListener('submit', async (e) => {
       e.preventDefault();
       const btn = document.getElementById('btn-submit-edit-master'); btn.disabled = true; btn.textContent = 'Menyimpan...';
       const msg = document.getElementById('msg-edit-master'); msg.className = 'msg';
       const form = e.target;
-
       try {
         const { error } = await sb.from('master_barang').update({
           nama_barang: form.nama_barang.value.trim(),
           satuan: form.satuan.value.trim(),
           harga_terakhir: Number(form.harga_terakhir.value),
           status_kepemilikan: form.status_kepemilikan.value,
-          vendor_id: form.vendor_id.value || null
+          vendor_id: form.vendor_id.value || null,
+          no_batch: form.no_batch.value.trim() || '-'
         }).eq('id', form.id.value);
-
         if (error) throw new Error(error.message);
         msg.textContent = '✅ Berhasil diupdate.'; msg.className = 'msg show ok';
         setTimeout(() => { modal.style.display = 'none'; renderMasterPanel(); }, 1000);
