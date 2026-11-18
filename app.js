@@ -677,22 +677,25 @@ async function renderMasukPanel() {
 }
 
 // ============================================================
-// 7. PANEL MUTASI (REVISI: Riwayat, Edit, Hapus)
+// 7. PANEL MUTASI (REVISI: Status & Vendor otomatis dari Master Barang)
 // ============================================================
 async function renderMutasiPanel() {
   try {
     const master = await selectView('master_barang', { eq: { aktif: true }, order: { column: 'nama_barang' } });
     const gudang = await selectView('gudang');
     const vendor = await selectView('vendor');
-    
+
     const riwayat = await selectView('v_kartu_stok', { eq: { jenis: 'mutasi' }, order: { column: 'created_at', ascending: false }, limit: 50 });
 
     let optBarang = master.map(m => `<option value="${m.kode_barang}">${m.kode_barang} - ${m.nama_barang}</option>`).join('');
     let optGudang = gudang.map(g => `<option value="${g.id}">${g.nama} (${g.tipe})</option>`).join('');
     let optVendor = vendor.map(v => `<option value="${v.id}">${v.nama}</option>`).join('');
-    
+
     let gPusat = gudang.find(g => g.tipe === 'pusat')?.id || '';
     let gUnit = gudang.find(g => g.tipe === 'unit')?.id || '';
+
+    // Lookup master barang berdasarkan kode
+    const masterByKode = Object.fromEntries(master.map(m => [m.kode_barang, m]));
 
     pageContent.innerHTML = `
       <div class="card">
@@ -705,13 +708,18 @@ async function renderMutasiPanel() {
             <div class="field"><label>Dari Gudang *</label><select name="dari_gudang" required>${optGudang}</select></div>
             <div class="field"><label>Ke Gudang *</label><select name="ke_gudang" required>${optGudang}</select></div>
             <div class="field">
-              <label>Status *</label>
-              <select name="status" required>
+              <label>Status (otomatis dari master)</label>
+              <select name="status" disabled style="background:#eee;">
                 <option value="milik_rs">Milik RS</option>
                 <option value="konsinyasi">Konsinyasi</option>
               </select>
             </div>
-            <div class="field"><label>Vendor (Konsinyasi)</label><select name="vendor_id"><option value="">- Tanpa Vendor -</option>${optVendor}</select></div>
+            <div class="field">
+              <label>Vendor (otomatis dari master)</label>
+              <select name="vendor_id" disabled style="background:#eee;">
+                <option value="">- Tanpa Vendor -</option>${optVendor}
+              </select>
+            </div>
           </div>
           <button class="btn" type="submit" style="margin-top:16px;" id="btn-mutasi">Proses Mutasi</button>
           <div class="msg" id="msg-mutasi"></div>
@@ -731,10 +739,9 @@ async function renderMutasiPanel() {
             <td>${escapeHtml(r.dari_gudang)}</td>
             <td>${escapeHtml(r.ke_gudang)}</td>
             <td>
-              <button class="btn secondary btn-edit-mutasi" 
-                data-id="${r.id}" data-kode="${r.kode_barang}" data-tgl="${r.tanggal}" 
-                data-jml="${r.qty}" data-dari="${r.dari_gudang_id || ''}" data-ke="${r.ke_gudang_id || ''}" 
-                data-status="${r.status_kepemilikan}" data-vendor="${r.vendor_id || ''}"
+              <button class="btn secondary btn-edit-mutasi"
+                data-id="${r.id}" data-kode="${r.kode_barang}" data-tgl="${r.tanggal}"
+                data-jml="${r.qty}" data-dari="${r.dari_gudang_id || ''}" data-ke="${r.ke_gudang_id || ''}"
                 style="padding:4px 10px;font-size:11px;margin-right:4px;">Edit</button>
               <button class="btn secondary btn-hapus-mutasi" data-id="${r.id}" style="padding:4px 10px;font-size:11px;background:#fbeae8;color:var(--danger);">Hapus</button>
             </td>
@@ -754,8 +761,19 @@ async function renderMutasiPanel() {
               <div class="field full"><label>Jumlah *</label><input type="number" name="jumlah" min="1" required></div>
               <div class="field"><label>Dari Gudang *</label><select name="dari_gudang" required>${optGudang}</select></div>
               <div class="field"><label>Ke Gudang *</label><select name="ke_gudang" required>${optGudang}</select></div>
-              <div class="field"><label>Status *</label><select name="status" required><option value="milik_rs">Milik RS</option><option value="konsinyasi">Konsinyasi</option></select></div>
-              <div class="field"><label>Vendor</label><select name="vendor_id"><option value="">- Tanpa Vendor -</option>${optVendor}</select></div>
+              <div class="field">
+                <label>Status (otomatis)</label>
+                <select name="status" disabled style="background:#eee;">
+                  <option value="milik_rs">Milik RS</option>
+                  <option value="konsinyasi">Konsinyasi</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>Vendor (otomatis)</label>
+                <select name="vendor_id" disabled style="background:#eee;">
+                  <option value="">- Tanpa Vendor -</option>${optVendor}
+                </select>
+              </div>
             </div>
             <div style="margin-top:20px; display:flex; gap:10px; justify-content:flex-end;">
               <button type="button" class="btn secondary" id="btn-batal-edit-mutasi">Batal</button>
@@ -772,16 +790,44 @@ async function renderMutasiPanel() {
     if (gPusat) f.dari_gudang.value = gPusat;
     if (gUnit) f.ke_gudang.value = gUnit;
 
+    // ------------------------------------------------------------
+    // Helper: isi Status & Vendor otomatis dari master barang
+    // ------------------------------------------------------------
+    function isiDariMaster(kode, selStatus, selVendor) {
+      const b = masterByKode[kode];
+      selStatus.value = b?.status_kepemilikan || 'milik_rs';
+      selVendor.value = b?.vendor_id || '';
+    }
+
+    // Form utama: isi otomatis saat barang dipilih
+    f.kode_barang.addEventListener('change', () => {
+      isiDariMaster(f.kode_barang.value, f.status, f.vendor_id);
+    });
+
+    // ------------------------------------------------------------
+    // Submit form utama
+    // ------------------------------------------------------------
     f.addEventListener('submit', async (e) => {
       e.preventDefault();
       const btn = document.getElementById('btn-mutasi'); btn.disabled = true; btn.textContent = 'Memproses...';
       const msg = document.getElementById('msg-mutasi'); msg.className = 'msg';
+
+      // Status & vendor diambil langsung dari master (field disabled tidak dipakai)
+      const b = masterByKode[f.kode_barang.value];
+      if (!b) {
+        msg.textContent = '❌ Pilih barang terlebih dahulu.'; msg.className = 'msg show err';
+        btn.disabled = false; btn.textContent = 'Proses Mutasi';
+        return;
+      }
+
       try {
         await callRpc('rpc_mutasi', {
-          p_tanggal: f.tanggal.value, p_kode_barang: f.kode_barang.value,
+          p_tanggal: f.tanggal.value, p_kode_barang: b.kode_barang,
           p_jumlah: Number(f.jumlah.value), p_dari_gudang: f.dari_gudang.value,
-          p_ke_gudang: f.ke_gudang.value, p_status: f.status.value,
-          p_vendor_id: f.vendor_id.value || null, p_no_batch: '-', p_keterangan: null
+          p_ke_gudang: f.ke_gudang.value,
+          p_status: b.status_kepemilikan || 'milik_rs',
+          p_vendor_id: b.vendor_id || null,
+          p_no_batch: '-', p_keterangan: null
         });
         msg.textContent = '✅ Mutasi berhasil.'; msg.className = 'msg show ok';
         setTimeout(() => renderMutasiPanel(), 1000);
@@ -791,6 +837,9 @@ async function renderMutasiPanel() {
       }
     });
 
+    // ------------------------------------------------------------
+    // Hapus mutasi
+    // ------------------------------------------------------------
     document.querySelectorAll('.btn-hapus-mutasi').forEach(btn => {
       btn.addEventListener('click', async function() {
         if (!confirm('Yakin hapus mutasi ini? Stok akan dikembalikan ke gudang asal.')) return;
@@ -802,40 +851,56 @@ async function renderMutasiPanel() {
       });
     });
 
+    // ------------------------------------------------------------
+    // Modal edit
+    // ------------------------------------------------------------
     const modal = document.getElementById('modal-edit-mutasi');
+    const formEdit = document.getElementById('form-edit-mutasi');
+
+    // Isi otomatis saat barang diganti di modal edit
+    formEdit.kode_barang.addEventListener('change', () => {
+      isiDariMaster(formEdit.kode_barang.value, formEdit.status, formEdit.vendor_id);
+    });
+
     document.querySelectorAll('.btn-edit-mutasi').forEach(btn => {
       btn.addEventListener('click', function() {
-        const form = document.getElementById('form-edit-mutasi');
-        form.id.value = this.dataset.id;
-        form.tanggal.value = this.dataset.tgl;
-        form.kode_barang.value = this.dataset.kode;
-        form.jumlah.value = this.dataset.jml;
-        form.dari_gudang.value = this.dataset.dari;
-        form.ke_gudang.value = this.dataset.ke;
-        form.status.value = this.dataset.status;
-        form.vendor_id.value = this.dataset.vendor;
+        formEdit.id.value = this.dataset.id;
+        formEdit.tanggal.value = this.dataset.tgl;
+        formEdit.kode_barang.value = this.dataset.kode;
+        formEdit.jumlah.value = this.dataset.jml;
+        formEdit.dari_gudang.value = this.dataset.dari;
+        formEdit.ke_gudang.value = this.dataset.ke;
+        // Status & vendor mengikuti master barang
+        isiDariMaster(this.dataset.kode, formEdit.status, formEdit.vendor_id);
         modal.style.display = 'flex';
       });
     });
 
     document.getElementById('btn-batal-edit-mutasi').addEventListener('click', () => modal.style.display = 'none');
 
-    document.getElementById('form-edit-mutasi').addEventListener('submit', async (e) => {
+    formEdit.addEventListener('submit', async (e) => {
       e.preventDefault();
       const btn = document.getElementById('btn-submit-edit-mutasi'); btn.disabled = true; btn.textContent = 'Menyimpan...';
       const msg = document.getElementById('msg-edit-mutasi'); msg.className = 'msg';
       const form = e.target;
 
+      const b = masterByKode[form.kode_barang.value];
+      if (!b) {
+        msg.textContent = '❌ Pilih barang terlebih dahulu.'; msg.className = 'msg show err';
+        btn.disabled = false; btn.textContent = 'Simpan Perubahan';
+        return;
+      }
+
       try {
         await callRpc('rpc_edit_mutasi', {
           p_transaksi_id: form.id.value,
           p_tanggal: form.tanggal.value,
-          p_kode_barang: form.kode_barang.value,
+          p_kode_barang: b.kode_barang,
           p_jumlah: Number(form.jumlah.value),
           p_dari_gudang: form.dari_gudang.value,
           p_ke_gudang: form.ke_gudang.value,
-          p_status: form.status.value,
-          p_vendor_id: form.vendor_id.value || null
+          p_status: b.status_kepemilikan || 'milik_rs',
+          p_vendor_id: b.vendor_id || null
         });
         msg.textContent = '✅ Berhasil diupdate.'; msg.className = 'msg show ok';
         setTimeout(() => { modal.style.display = 'none'; renderMutasiPanel(); }, 1000);
