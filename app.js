@@ -1,5 +1,5 @@
 // ============================================================
-// APP.JS — Logika Utama Aplikasi
+// APP.JS — Logika Utama Aplikasi (Versi Final)
 // ============================================================
 import { sb, signIn, signOut, onAuthChange, selectView, callRpc, escapeHtml, angka, rupiah, todayISO } from './supabase-client.js';
 
@@ -19,7 +19,6 @@ let currentUser = null;
 let halamanMaster = 1;
 let halamanStok = 1;
 const PER_HALAMAN = 20;
-let masterBarangCache = [];
 
 // ============================================================
 // 1. AUTENTIKASI
@@ -45,16 +44,12 @@ onAuthChange((event, session) => {
     currentUser = session.user;
     loginScreen.style.display = 'none'; appScreen.classList.add('show');
     userDisplay.textContent = `👤 ${currentUser.email}`;
-    if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
-       navigateTo('stok');
-    }
+    if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') navigateTo('stok');
   } else {
-    // Jika session habis / tidak ada (JWT expired / logout)
     currentUser = null;
     appScreen.classList.remove('show'); loginScreen.style.display = 'flex';
     loginBtn.disabled = false; loginBtn.textContent = 'Masuk'; loginForm.reset();
     if (event === 'SIGNED_OUT' || event === 'TOKEN_REFRESHED') {
-      // Opsional: Tampilkan pesan di halaman login
       loginError.textContent = 'Sesi Anda telah berakhir. Silakan login kembali.';
       loginError.style.display = 'block';
     }
@@ -92,7 +87,7 @@ function navigateTo(tab) {
 }
 
 // ============================================================
-// 3. PANEL STOK SAAT INI (Revisi: Pagination)
+// 3. PANEL STOK SAAT INI (Pagination)
 // ============================================================
 async function renderStokPanel() {
   try {
@@ -187,7 +182,7 @@ window.ubahHalamanStok = (direction) => {
 };
 
 // ============================================================
-// 4. PANEL MASTER BARANG (Fix Tombol Edit/Hapus & +Kolom Status)
+// 4. PANEL MASTER BARANG
 // ============================================================
 async function renderMasterPanel() {
   try {
@@ -324,7 +319,6 @@ async function renderMasterPanel() {
       </div>
     `;
 
-    // ===== LOGIKA JAVASCRIPT (YANG SEMPAT HILANG) =====
     const selStatus = document.getElementById('master-status');
     const selVendor = document.getElementById('master-vendor');
     selStatus.addEventListener('change', (e) => {
@@ -412,7 +406,7 @@ async function renderMasterPanel() {
       });
     });
 
-    // BUKA MODAL EDIT & SUBMIT EDIT
+    // BUKA MODAL EDIT
     const modal = document.getElementById('modal-edit-master');
     document.querySelectorAll('.btn-edit-master').forEach(btn => {
       btn.addEventListener('click', function() {
@@ -438,6 +432,7 @@ async function renderMasterPanel() {
 
     document.getElementById('btn-batal-edit-master').addEventListener('click', () => modal.style.display = 'none');
 
+    // SUBMIT EDIT
     document.getElementById('form-edit-master').addEventListener('submit', async (e) => {
       e.preventDefault();
       const btn = document.getElementById('btn-submit-edit-master'); btn.disabled = true; btn.textContent = 'Menyimpan...';
@@ -626,13 +621,12 @@ async function renderMasukPanel() {
 
     document.getElementById('masuk-tgl').value = todayISO();
 
-    // LOGIKA SEARCH & AUTO-FILL
     const inputCari = document.getElementById('masuk-cari-barang');
     const inputKode = document.getElementById('masuk-kode-barang');
 
     inputCari.addEventListener('input', function() {
       const val = this.value;
-      const barang = master.find(m => `${m.kode_barang} - ${m.nama_barang}` === val);
+      const barang = window.masterBarangCache.find(m => `${m.kode_barang} - ${m.nama_barang}` === val);
       
       if (barang) {
         inputKode.value = barang.kode_barang;
@@ -644,7 +638,6 @@ async function renderMasukPanel() {
       }
     });
 
-    // SUBMIT FORM (Penyebab HPP jadi 0 sudah diperbaiki di sini)
     document.getElementById('form-masuk').addEventListener('submit', async (e) => {
       e.preventDefault();
       const btn = document.getElementById('btn-masuk'); btn.disabled = true; btn.textContent = 'Menyimpan...';
@@ -683,77 +676,6 @@ async function renderMasukPanel() {
   }
 }
 
-    // ==========================================
-    // LOGIKA SEARCH & AUTO-FILL
-    // ==========================================
-    const inputCari = document.getElementById('masuk-cari-barang');
-    const inputKode = document.getElementById('masuk-kode-barang');
-
-    inputCari.addEventListener('input', function() {
-      const val = this.value;
-      // Cek apakah teks yang diketik cocok dengan salah satu opsi di datalist
-      const barang = master.find(m => `${m.kode_barang} - ${m.nama_barang}` === val);
-      
-      if (barang) {
-        inputKode.value = barang.kode_barang; // Simpan kode asli untuk form
-        document.getElementById('masuk-hpp').value = barang.hpp || 0;
-        
-        if (barang.status_kepemilikan) {
-          document.getElementById('masuk-status').value = barang.status_kepemilikan;
-        }
-        
-        if (barang.vendor_id) {
-          document.getElementById('masuk-vendor').value = barang.vendor_id;
-        } else {
-          document.getElementById('masuk-vendor').value = ""; 
-        }
-      } else {
-        inputKode.value = ""; // Reset jika user mengetik ulang
-      }
-    });
-
-       // Submit Form
-    document.getElementById('form-masuk').addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const btn = document.getElementById('btn-masuk'); btn.disabled = true; btn.textContent = 'Menyimpan...';
-      const msg = document.getElementById('msg-masuk'); msg.className = 'msg';
-      const form = e.target;
-
-      if (!inputKode.value) {
-        msg.textContent = '❌ Harap pilih barang dari daftar pencarian yang muncul.';
-        msg.className = 'msg show err';
-        btn.disabled = false; btn.textContent = 'Simpan Penerimaan'; 
-        return;
-      }
-
-      // AMBIL NILAI HPP SECARA SPESIFIK DARI ID INPUT-NYA
-      const nilaiHPP = Number(document.getElementById('masuk-hpp').value);
-
-      try {
-        await callRpc('rpc_barang_masuk', {
-          p_tanggal: form.tanggal.value, 
-          p_kode_barang: document.getElementById('masuk-kode-barang').value,
-          p_jumlah: Number(form.jumlah.value), 
-          p_harga: Number(document.getElementById('masuk-hpp').value), // <--- PERBAIKAN DI SINI
-          p_status_kepemilikan: form.status.value,
-          p_vendor_id: form.vendor_id.value || null,
-          p_no_batch: form.no_batch.value.trim() || '-',
-          p_keterangan: null
-        });
-        msg.textContent = '✅ Barang masuk berhasil dicatat.'; msg.className = 'msg show ok';
-        setTimeout(() => renderMasukPanel(), 1000);
-      } catch (err) {
-        msg.textContent = '❌ ' + err.message; msg.className = 'msg show err';
-        btn.disabled = false; btn.textContent = 'Simpan Penerimaan';
-      }
-    });
-
-  } catch (err) {
-    pageContent.innerHTML = `<div class="card"><div class="msg show err">Gagal: ${err.message}</div></div>`;
-  }
-}
-
-
 // ============================================================
 // 7. PANEL MUTASI (REVISI: Riwayat, Edit, Hapus)
 // ============================================================
@@ -763,7 +685,6 @@ async function renderMutasiPanel() {
     const gudang = await selectView('gudang');
     const vendor = await selectView('vendor');
     
-    // Ambil riwayat mutasi
     const riwayat = await selectView('v_kartu_stok', { eq: { jenis: 'mutasi' }, order: { column: 'created_at', ascending: false }, limit: 50 });
 
     let optBarang = master.map(m => `<option value="${m.kode_barang}">${m.kode_barang} - ${m.nama_barang}</option>`).join('');
@@ -851,7 +772,6 @@ async function renderMutasiPanel() {
     if (gPusat) f.dari_gudang.value = gPusat;
     if (gUnit) f.ke_gudang.value = gUnit;
 
-    // 1. Submit Baru
     f.addEventListener('submit', async (e) => {
       e.preventDefault();
       const btn = document.getElementById('btn-mutasi'); btn.disabled = true; btn.textContent = 'Memproses...';
@@ -871,7 +791,6 @@ async function renderMutasiPanel() {
       }
     });
 
-    // 2. Hapus
     document.querySelectorAll('.btn-hapus-mutasi').forEach(btn => {
       btn.addEventListener('click', async function() {
         if (!confirm('Yakin hapus mutasi ini? Stok akan dikembalikan ke gudang asal.')) return;
@@ -883,7 +802,6 @@ async function renderMutasiPanel() {
       });
     });
 
-    // 3. Buka Modal Edit
     const modal = document.getElementById('modal-edit-mutasi');
     document.querySelectorAll('.btn-edit-mutasi').forEach(btn => {
       btn.addEventListener('click', function() {
@@ -902,7 +820,6 @@ async function renderMutasiPanel() {
 
     document.getElementById('btn-batal-edit-mutasi').addEventListener('click', () => modal.style.display = 'none');
 
-    // 4. Submit Edit
     document.getElementById('form-edit-mutasi').addEventListener('submit', async (e) => {
       e.preventDefault();
       const btn = document.getElementById('btn-submit-edit-mutasi'); btn.disabled = true; btn.textContent = 'Menyimpan...';
@@ -934,7 +851,7 @@ async function renderMutasiPanel() {
 }
 
 // ============================================================
-// 8. PANEL PENGELUARAN (Revisi: Hilangkan Minus di Tabel)
+// 8. PANEL PENGELUARAN
 // ============================================================
 async function renderKeluarPanel() {
   try {
@@ -1098,7 +1015,6 @@ async function renderKeluarPanel() {
 // ============================================================
 // 9. FITUR BADGE MERAH (NOTIFIKASI KONSINYASI)
 // ============================================================
-// Fungsi untuk mengecek notifikasi secara otomatis di latar belakang
 async function cekBadgeNotifikasi() {
   try {
     const notif = await selectView('v_notifikasi_konsinyasi_open');
@@ -1114,7 +1030,6 @@ async function cekBadgeNotifikasi() {
   }
 }
 
-// Panggil pengecekan setiap 30 detik setelah login
 setInterval(() => {
   if (currentUser) cekBadgeNotifikasi();
 }, 30000);
@@ -1153,15 +1068,14 @@ async function renderNotifikasiPanel() {
     html += `</div>`;
     pageContent.innerHTML = html;
 
-    // Event listener untuk tombol "Tandai Selesai"
     document.querySelectorAll('.btn-selesai').forEach(btn => {
       btn.addEventListener('click', async function() {
         if(!confirm('Yakin barang sudah di-reorder / notifikasi selesai?')) return;
         this.disabled = true; this.textContent = 'Memproses...';
         try {
           await callRpc('rpc_resolve_notifikasi', { p_id: this.dataset.id, p_status: 'selesai' });
-          renderNotifikasiPanel(); // refresh tabel
-          cekBadgeNotifikasi();    // refresh badge merah
+          renderNotifikasiPanel();
+          cekBadgeNotifikasi();
         } catch (err) {
           alert(err.message);
           this.disabled = false; this.textContent = 'Tandai Selesai';
@@ -1175,7 +1089,7 @@ async function renderNotifikasiPanel() {
 }
 
 // ============================================================
-// 11. PANEL LAPORAN PEMAKAIAN (Revisi: Hilangkan Minus)
+// 11. PANEL LAPORAN PEMAKAIAN
 // ============================================================
 async function renderPemakaianPanel() {
   try {
@@ -1241,7 +1155,7 @@ async function renderPemakaianPanel() {
         
         let totalQty = 0;
         data.forEach((r, i) => {
-          totalQty += Math.abs(r.jumlah); // Pastikan total tetap positif
+          totalQty += Math.abs(r.jumlah);
           const tglIndo = new Date(r.tanggal).toLocaleDateString('id-ID');
           
           html += `<tr>
@@ -1251,7 +1165,7 @@ async function renderPemakaianPanel() {
             <td>${escapeHtml(r.no_rekam_medik)}</td>
             <td>${escapeHtml(r.nama_barang)}</td>
             <td>${escapeHtml(r.no_batch || '-')}</td>
-            <td class="num">${angka(Math.abs(r.jumlah))}</td> <!-- REVISI: Hapus minus -->
+            <td class="num">${angka(Math.abs(r.jumlah))}</td>
             <td>${escapeHtml(r.tujuan)}</td>
           </tr>`;
         });
@@ -1289,7 +1203,7 @@ async function renderPemakaianPanel() {
 }
 
 // ============================================================
-// 12. PANEL KARTU STOK (Riwayat Barang)
+// 12. PANEL KARTU STOK
 // ============================================================
 async function renderKartuStokPanel() {
   try {
@@ -1357,7 +1271,7 @@ async function renderKartuStokPanel() {
 }
 
 // ============================================================
-// 13. PANEL PENYESUAIAN STOK (REVISI: +Status, +Vendor, +Batch)
+// 13. PANEL PENYESUAIAN STOK
 // ============================================================
 async function renderPenyesuaianPanel() {
   try {
@@ -1486,7 +1400,6 @@ async function renderPenyesuaianPanel() {
 
     document.getElementById('pny-tgl').value = todayISO();
 
-    // 1. Submit Baru
     document.getElementById('form-penyesuaian').addEventListener('submit', async (e) => {
       e.preventDefault();
       const btn = document.getElementById('btn-pny'); btn.disabled = true; btn.textContent = 'Menyimpan...';
@@ -1508,7 +1421,6 @@ async function renderPenyesuaianPanel() {
       }
     });
 
-    // 2. Hapus
     document.querySelectorAll('.btn-hapus-pny').forEach(btn => {
       btn.addEventListener('click', async function() {
         if (!confirm('Yakin hapus penyesuaian ini? Stok akan dikembalikan ke posisi semula.')) return;
@@ -1520,7 +1432,6 @@ async function renderPenyesuaianPanel() {
       });
     });
 
-    // 3. Buka Modal Edit
     const modal = document.getElementById('modal-edit-pny');
     document.querySelectorAll('.btn-edit-pny').forEach(btn => {
       btn.addEventListener('click', function() {
@@ -1539,7 +1450,6 @@ async function renderPenyesuaianPanel() {
 
     document.getElementById('btn-batal-edit-pny').addEventListener('click', () => modal.style.display = 'none');
 
-    // 4. Submit Edit
     document.getElementById('form-edit-pny').addEventListener('submit', async (e) => {
       e.preventDefault();
       const btn = document.getElementById('btn-submit-edit-pny'); btn.disabled = true; btn.textContent = 'Menyimpan...';
@@ -1588,8 +1498,6 @@ async function renderApprovalPanel() {
         <thead><tr><th>Tanggal</th><th>Barang</th><th>Jenis</th><th class="num">Jumlah</th><th>Alasan</th><th>Aksi</th></tr></thead><tbody>`;
       
       pending.forEach(p => {
-        // Kita perlu mencari nama barang berdasarkan barang_id
-        // (Karena view belum menyertakan nama barang, kita gunakan cache jika ada, atau panggil db)
         html += `<tr id="row-${p.id}">
           <td>${new Date(p.tanggal).toLocaleDateString('id-ID')}</td>
           <td>${p.barang_id}</td>
@@ -1607,7 +1515,6 @@ async function renderApprovalPanel() {
     html += `</div>`;
     pageContent.innerHTML = html;
 
-    // Event tombol Setujui
     document.querySelectorAll('.btn-approve').forEach(btn => {
       btn.addEventListener('click', async function() {
         this.disabled = true; this.textContent = '...';
@@ -1618,7 +1525,6 @@ async function renderApprovalPanel() {
       });
     });
 
-    // Event tombol Tolak
     document.querySelectorAll('.btn-reject').forEach(btn => {
       btn.addEventListener('click', async function() {
         this.disabled = true; this.textContent = '...';
@@ -1635,15 +1541,13 @@ async function renderApprovalPanel() {
 }
 
 // ============================================================
-// 15. PANEL LAPORAN OPNAME (Posisi Stok Akhir)
+// 15. PANEL LAPORAN OPNAME
 // ============================================================
 async function renderOpnamePanel() {
   try {
-    // Ambil data view stok saat ini
     const stok = await selectView('v_stok_saat_ini', { order: { column: 'nama_barang', ascending: true } });
     const gudang = await selectView('gudang');
 
-    // Hitung ringkasan per gudang
     let ringkasan = {};
     gudang.forEach(g => { ringkasan[g.id] = { nama: g.nama, item: 0, nilai: 0 }; });
     
@@ -1668,7 +1572,6 @@ async function renderOpnamePanel() {
         <button class="btn secondary" id="btn-export-opname">⬇ Export CSV</button>
       </div>
       
-      <!-- Kartu Ringkasan -->
       <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:16px;margin-bottom:24px;">
         ${Object.values(ringkasan).map(r => `
           <div style="background:#e4f0ee;padding:12px 20px;border-radius:8px;flex:1;min-width:200px;">
@@ -1679,18 +1582,12 @@ async function renderOpnamePanel() {
         `).join('')}
       </div>
 
-      <!-- Tabel Detail -->
       <div class="table-wrap">
         <table>
           <thead>
             <tr>
-              <th>Kode</th>
-              <th>Nama Barang</th>
-              <th>Gudang</th>
-              <th>Status</th>
-              <th class="num">Sisa Stok</th>
-              <th class="num">Harga Satuan</th>
-              <th class="num">Total Nilai</th>
+              <th>Kode</th><th>Nama Barang</th><th>Gudang</th><th>Status</th>
+              <th class="num">Sisa Stok</th><th class="num">Harga Satuan</th><th class="num">Total Nilai</th>
             </tr>
           </thead>
           <tbody>
@@ -1718,7 +1615,6 @@ async function renderOpnamePanel() {
 
     pageContent.innerHTML = html;
 
-    // Fitur Export CSV Opname
     document.getElementById('btn-export-opname').addEventListener('click', () => {
       let csvContent = "data:text/csv;charset=utf-8,";
       csvContent += "Kode Barang,Nama Barang,Gudang,Status,Sisa Stok,Harga Satuan,Total Nilai\n";
