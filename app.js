@@ -851,19 +851,23 @@ async function renderMutasiPanel() {
 }
 
 // ============================================================
-// 8. PANEL PENGELUARAN
+// 8. PANEL PENGELUARAN (Search Barang + Info Stok)
 // ============================================================
 async function renderKeluarPanel() {
   try {
     const stokIBS = await selectView('v_stok_saat_ini', { order: { column: 'nama_barang' } });
     const gudangUnit = await selectView('gudang', { eq: { tipe: 'unit' } });
     const gudangIBS = gudangUnit.length > 0 ? gudangUnit[0].id : null;
-    const stokTersedia = stokIBS.filter(s => s.gudang_id === gudangIBS);
+    
+    // Filter hanya stok yang ada di gudang IBS dan stoknya > 0
+    const stokTersedia = stokIBS.filter(s => s.gudang_id === gudangIBS && s.jumlah > 0);
+    
+    // Simpan ke cache untuk pencarian
+    window.stokIBSCache = stokTersedia;
 
-    let optStok = stokTersedia.map(s => `
-      <option value="${s.batch_id}|${s.kode_barang}">
-        ${s.nama_barang} - ${s.status_kepemilikan === 'konsinyasi' ? 'Konsinyasi' : 'Milik RS'} (Tersedia: ${s.jumlah})
-      </option>
+    // Buat daftar datalist
+    let optStokSearch = stokTersedia.map(s => `
+      <option value="${s.kode_barang} - ${s.nama_barang}">
     `).join('');
 
     const riwayat = await selectView('v_laporan_pemakaian_sp', { order: { column: 'created_at', ascending: false }, limit: 50 });
@@ -876,14 +880,24 @@ async function renderKeluarPanel() {
             <div>
               <h4 style="font-size:14px; color:var(--primary); margin-bottom:12px;">Data Barang</h4>
               <div class="field" style="margin-bottom:12px;"><label>Tanggal Pakai *</label><input type="date" name="tanggal" id="keluar-tgl" required></div>
+              
               <div class="field" style="margin-bottom:12px;">
-                <label>Pilih Barang (IBS) *</label>
-                <select name="batch_info" required>
-                  <option value="">- Pilih Barang -</option>${optStok}
-                </select>
+                <label>Cari Barang (IBS) *</label>
+                <input type="text" id="keluar-cari-barang" list="list-barang-ibs" placeholder="Ketik Kode atau Nama Barang..." required autocomplete="off">
+                <datalist id="list-barang-ibs">
+                  ${optStokSearch}
+                </datalist>
+                <input type="hidden" id="keluar-kode-barang">
               </div>
+              
+              <div class="field" style="margin-bottom:12px;">
+                <label>Sisa Stok Tersedia</label>
+                <input type="text" id="keluar-info-stok" readonly style="background:#f4f7f6; font-weight:bold; color:var(--primary);">
+              </div>
+
               <div class="field" style="margin-bottom:12px;"><label>Jumlah Dipakai *</label><input type="number" name="jumlah" min="1" required></div>
             </div>
+            
             <div>
               <h4 style="font-size:14px; color:var(--primary); margin-bottom:12px;">Data Pasien</h4>
               <div class="field" style="margin-bottom:12px;"><label>Nama Pasien *</label><input type="text" name="nama_pasien" required placeholder="Budi Santoso"></div>
@@ -909,7 +923,7 @@ async function renderKeluarPanel() {
             <td>${escapeHtml(r.nama_barang)}</td>
             <td>${escapeHtml(r.no_batch || '-')}</td>
             <td>${r.status_kepemilikan === 'konsinyasi' ? '<span class="badge warn">Konsinyasi</span>' : 'Milik RS'}</td>
-            <td class="num">${angka(Math.abs(r.jumlah))}</td> <!-- REVISI: Hapus minus -->
+            <td class="num">${angka(Math.abs(r.jumlah))}</td>
             <td>
               <button class="btn secondary btn-edit-keluar" data-id="${r.id}" data-tgl="${r.tanggal}" data-jml="${r.jumlah}" data-pasien="${r.nama_pasien}" data-rm="${r.no_rekam_medik}" data-tujuan="${r.tujuan}" style="padding:4px 10px;font-size:11px;margin-right:4px;">Edit</button>
               <button class="btn secondary btn-hapus-keluar" data-id="${r.id}" style="padding:4px 10px;font-size:11px;background:#fbeae8;color:var(--danger);">Hapus</button>
@@ -918,7 +932,7 @@ async function renderKeluarPanel() {
         </tbody></table></div>
       </div>
 
-      <!-- MODAL EDIT -->
+      <!-- MODAL EDIT (Sama seperti sebelumnya) -->
       <div id="modal-edit-keluar" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:9999; align-items:center; justify-content:center;">
         <div style="background:#fff; padding:24px; border-radius:12px; width:100%; max-width:500px;">
           <h3 style="margin-bottom:16px;">Edit Pengeluaran</h3>
@@ -943,20 +957,60 @@ async function renderKeluarPanel() {
 
     document.getElementById('keluar-tgl').value = todayISO();
 
+    // ==========================================
+    // LOGIKA SEARCH & AUTO-FILL STOK IBS
+    // ==========================================
+    const inputCari = document.getElementById('keluar-cari-barang');
+    const inputKode = document.getElementById('keluar-kode-barang');
+    const infoStok = document.getElementById('keluar-info-stok');
+
+    inputCari.addEventListener('input', function() {
+      const val = this.value;
+      // Cocokkan teks input dengan data di cache
+      const barang = window.stokIBSCache.find(s => `${s.kode_barang} - ${s.nama_barang}` === val);
+      
+      if (barang) {
+        inputKode.value = barang.kode_barang; 
+        // Tampilkan info jumlah di kolom readonly
+        infoStok.value = `${angka(barang.jumlah)} ${barang.satuan} (${barang.status_kepemilikan === 'konsinyasi' ? 'Konsinyasi' : 'Milik RS'})`; 
+      } else {
+        inputKode.value = ""; 
+        infoStok.value = ""; 
+      }
+    });
+
+    // Submit Form
     document.getElementById('form-keluar').addEventListener('submit', async (e) => {
       e.preventDefault();
       const btn = document.getElementById('btn-keluar'); btn.disabled = true; btn.textContent = 'Memproses...';
       const msg = document.getElementById('msg-keluar'); msg.className = 'msg';
-      const form = e.target;
-      const info = form.batch_info.value.split('|'); 
 
-      if (info.length < 2) return alert('Pilih barang.');
+      if (!inputKode.value) {
+        msg.textContent = '❌ Harap pilih barang dari daftar pencarian yang muncul.';
+        msg.className = 'msg show err';
+        btn.disabled = false; btn.textContent = 'Simpan Pengeluaran';
+        return;
+      }
+
+      const jumlahInput = Number(document.querySelector('[name="jumlah"]').value);
+      const barang = window.stokIBSCache.find(s => s.kode_barang === inputKode.value);
+
+      if (barang && jumlahInput > barang.jumlah) {
+        msg.textContent = `❌ Stok tidak cukup. Tersedia: ${barang.jumlah}`;
+        msg.className = 'msg show err';
+        btn.disabled = false; btn.textContent = 'Simpan Pengeluaran';
+        return;
+      }
 
       try {
         await callRpc('rpc_pengeluaran', {
-          p_tanggal: form.tanggal.value, p_kode_barang: info[1], p_batch_id: info[0], 
-          p_jumlah: Number(form.jumlah.value), p_nama_pasien: form.nama_pasien.value.trim(), 
-          p_no_rm: form.no_rm.value.trim(), p_tujuan: form.tujuan.value.trim()
+          p_tanggal: document.getElementById('keluar-tgl').value, 
+          p_kode_barang: inputKode.value, 
+          p_batch_id: barang.batch_id, 
+          p_jumlah: jumlahInput, 
+          p_nama_pasien: document.querySelector('[name="nama_pasien"]').value.trim(), 
+          p_no_rm: document.querySelector('[name="no_rm"]').value.trim(), 
+          p_tujuan: document.querySelector('[name="tujuan"]').value.trim()
         });
         msg.textContent = '✅ Pengeluaran dicatat.'; msg.className = 'msg show ok';
         setTimeout(() => renderKeluarPanel(), 1000);
@@ -966,6 +1020,7 @@ async function renderKeluarPanel() {
       }
     });
 
+    // Logika Hapus
     document.querySelectorAll('.btn-hapus-keluar').forEach(btn => {
       btn.addEventListener('click', async function() {
         if (!confirm('Batalkan pengeluaran ini? Stok akan kembali ke IBS.')) return;
@@ -977,6 +1032,7 @@ async function renderKeluarPanel() {
       });
     });
 
+    // Logika Buka Modal Edit
     const modal = document.getElementById('modal-edit-keluar');
     document.querySelectorAll('.btn-edit-keluar').forEach(btn => {
       btn.addEventListener('click', function() {
@@ -989,6 +1045,7 @@ async function renderKeluarPanel() {
 
     document.getElementById('btn-batal-edit-keluar').addEventListener('click', () => modal.style.display = 'none');
 
+    // Logika Submit Edit
     document.getElementById('form-edit-keluar').addEventListener('submit', async (e) => {
       e.preventDefault();
       const btn = document.getElementById('btn-submit-edit-keluar'); btn.disabled = true; btn.textContent = 'Menyimpan...';
