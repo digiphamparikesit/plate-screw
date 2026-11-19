@@ -87,7 +87,7 @@ function navigateTo(tab) {
 }
 
 // ============================================================
-// 3. PANEL STOK SAAT INI (Pagination)
+// 3. PANEL STOK SAAT INI (Gabung Berdasarkan Kode & Status)
 // ============================================================
 async function renderStokPanel() {
   try {
@@ -100,16 +100,31 @@ async function renderStokPanel() {
 
     const grouped = {};
     stok.forEach(r => {
-      const key = `${r.kode_barang}|${r.status_kepemilikan}|${r.vendor || ''}|${r.no_batch || '-'}`;
+      // KUNCI UTAMA: Hanya berdasarkan Kode Barang dan Status Kepemilikan
+      // (Mengabaikan Vendor dan Batch agar tergabung jadi satu baris)
+      const key = `${r.kode_barang}|${r.status_kepemilikan}`;
+      
       if (!grouped[key]) {
         grouped[key] = {
-          kode_barang: r.kode_barang, nama_barang: r.nama_barang,
-          status_kepemilikan: r.status_kepemilikan, vendor: r.vendor,
-          no_batch: r.no_batch || '-', total_qty: 0, rincian_gudang: []
+          kode_barang: r.kode_barang, 
+          nama_barang: r.nama_barang,
+          status_kepemilikan: r.status_kepemilikan, 
+          total_qty: 0, 
+          rincian_gudang: {},
+          vendors: new Set() // Untuk menyimpan daftar vendor (jika ada)
         };
       }
+      
       grouped[key].total_qty += r.jumlah;
-      grouped[key].rincian_gudang.push({ nama_gudang: r.gudang, qty: r.jumlah });
+      
+      // Kumpulkan rincian per gudang
+      if (!grouped[key].rincian_gudang[r.gudang]) {
+        grouped[key].rincian_gudang[r.gudang] = 0;
+      }
+      grouped[key].rincian_gudang[r.gudang] += r.jumlah;
+
+      // Simpan nama vendor
+      if (r.vendor) grouped[key].vendors.add(r.vendor);
     });
 
     const dataArr = Object.values(grouped);
@@ -123,10 +138,14 @@ async function renderStokPanel() {
       <h3>Stok Plate & Screw (Ringkasan Total)</h3>
       <div class="sub">Klik pada <strong>Nama Barang</strong> untuk melihat rincian asal gudang.</div>
       <div class="table-wrap"><table>
-        <thead><tr><th>Kode</th><th>Nama Barang (Klik)</th><th>Batch</th><th>Status</th><th>Vendor</th><th class="num">Total Stok</th></tr></thead><tbody>`;
+        <thead><tr><th>Kode</th><th>Nama Barang (Klik)</th><th>Status</th><th>Vendor</th><th class="num">Total Stok</th></tr></thead><tbody>`;
     
     paginatedData.forEach((g, i) => {
       const rowId = `detail-stok-${startIndex + i}`;
+      
+      // Tampilkan vendor, jika lebih dari satu gabungkan dengan koma
+      const vendorText = Array.from(g.vendors).join(', ') || '-';
+
       html += `<tr>
         <td><strong>${escapeHtml(g.kode_barang)}</strong></td>
         <td>
@@ -134,16 +153,15 @@ async function renderStokPanel() {
             ${escapeHtml(g.nama_barang)}
           </button>
         </td>
-        <td>${escapeHtml(g.no_batch)}</td>
         <td>${g.status_kepemilikan === 'konsinyasi' ? '<span class="badge warn">Konsinyasi</span>' : 'Milik RS'}</td>
-        <td>${escapeHtml(g.vendor || '-')}</td>
+        <td>${escapeHtml(vendorText)}</td>
         <td class="num" style="font-weight:bold;">${angka(g.total_qty)}</td>
       </tr>
       <tr id="${rowId}" style="display:none; background:#f8fbfa;">
-        <td colspan="6" style="padding:10px 20px; border-bottom:2px solid var(--border);">
+        <td colspan="5" style="padding:10px 20px; border-bottom:2px solid var(--border);">
           <div style="font-size:12px; color:var(--text-muted); margin-bottom:6px;"><strong>Rincian Lokasi Stok:</strong></div>
           <ul style="margin:0; padding-left:20px; font-size:13px;">
-            ${g.rincian_gudang.map(rg => `<li>${escapeHtml(rg.nama_gudang)}: <strong>${angka(rg.qty)}</strong></li>`).join('')}
+            ${Object.keys(g.rincian_gudang).map(namaGudang => `<li>${escapeHtml(namaGudang)}: <strong>${angka(g.rincian_gudang[namaGudang])}</strong></li>`).join('')}
           </ul>
         </td>
       </tr>`;
